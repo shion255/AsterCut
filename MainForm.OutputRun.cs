@@ -1147,7 +1147,7 @@ internal sealed partial class MainForm
                 WriteLog($"ストリームコピーは入力と同じコンテナ ({GetWholeOutputExtension(forceEncode)}) で出力します。");
             }
 
-            var args = new List<string> { "-hide_banner", "-nostdin", "-y", "-loglevel", "verbose", "-i", _inputPath };
+            var args = new List<string> { "-hide_banner", "-nostdin", "-y", "-loglevel", "verbose", "-probesize", "100M", "-analyzeduration", "100M", "-i", _inputPath };
             var description = "";
             if (videoReencoded)
             {
@@ -1970,7 +1970,7 @@ internal sealed partial class MainForm
         var startText = startMs.ToString(CultureInfo.InvariantCulture);
         var lengthText = lengthMs.ToString(CultureInfo.InvariantCulture);
         var speedChanged = Math.Abs(speed - 1.0) >= 0.000001;
-        var args = new List<string> { "-hide_banner", "-nostdin", "-y", "-loglevel", "verbose", "-i", _inputPath };
+        var args = new List<string> { "-hide_banner", "-nostdin", "-y", "-loglevel", "verbose", "-probesize", "100M", "-analyzeduration", "100M", "-i", _inputPath };
         // 映像は主映像 (最初の映像ストリーム) だけを出力する (ワンセグなどの副映像は含めない)。
         if (_videoStreams.Count > 0) { args.Add("-map"); args.Add($"0:{_videoStreams[0].Index}"); }
         foreach (var audio in audios) { args.Add("-map"); args.Add($"0:{audio.Index}"); }
@@ -2119,7 +2119,7 @@ internal sealed partial class MainForm
             filterParts.Add($"[0:a:{audioRel}]atrim=start={startSec}:end={endSec},asetpts=PTS-STARTPTS{atempoSuffix}[aout{audioOrdinal}]");
         }
         var filterComplex = string.Join(";", filterParts);
-        var args = new List<string> { "-hide_banner", "-nostdin", "-y", "-loglevel", "verbose", "-i", _inputPath, "-filter_complex", filterComplex, "-map", "[vout]" };
+        var args = new List<string> { "-hide_banner", "-nostdin", "-y", "-loglevel", "verbose", "-probesize", "100M", "-analyzeduration", "100M", "-i", _inputPath, "-filter_complex", filterComplex, "-map", "[vout]" };
         for (var audioOrdinal = 0; audioOrdinal < audioRelativeIndices.Length; audioOrdinal++)
         {
             args.Add("-map");
@@ -2218,7 +2218,7 @@ internal sealed partial class MainForm
         var ext = Path.GetExtension(output).ToLowerInvariant();
         WriteLog($"出力予定ファイル名: {output}");
 
-        var args = new List<string> { "-hide_banner", "-nostdin", "-y", "-loglevel", "verbose", "-i", _inputPath };
+        var args = new List<string> { "-hide_banner", "-nostdin", "-y", "-loglevel", "verbose", "-probesize", "100M", "-analyzeduration", "100M", "-i", _inputPath };
         var description = "";
         if (isLosslessPath)
         {
