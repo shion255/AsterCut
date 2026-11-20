@@ -2184,6 +2184,7 @@ internal sealed partial class MainForm : Form
             containerId.Length > 0 ? containerId : "不明";
 
         _sourceDurationValue.Text = _durationMs > 0 ? TimeText.FormatClockFromMs(_durationMs) : "不明";
+        if (_durationMs > 0 && TestFrameTableReady()) _sourceDurationValue.Text += $" ({_frameTimesUs!.Length}f)";
         try
         {
             var info = new FileInfo(_inputPath);
