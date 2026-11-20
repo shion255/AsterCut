@@ -267,6 +267,12 @@ internal sealed partial class MainForm : Form
         {
             if (e.Data?.GetData(DataFormats.FileDrop) is string[] { Length: > 0 } files)
             {
+                // プロジェクトファイルは、動画ではなく編集プロジェクトとして開く。
+                if (string.Equals(Path.GetExtension(files[0]), ".acproj", StringComparison.OrdinalIgnoreCase))
+                {
+                    _ = OpenEditProjectFileAsync(files[0]);
+                    return;
+                }
                 _inputPathBox.Text = files[0];
                 _ = LoadInputFileAsync(files[0]);
             }

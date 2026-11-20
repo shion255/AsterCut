@@ -614,7 +614,16 @@ internal sealed partial class MainForm
             catch { }
         }
         if (dialog.ShowDialog() != DialogResult.OK) return;
-        var projectPath = dialog.FileName;
+        await OpenEditProjectFileAsync(dialog.FileName);
+    }
+
+    private async Task OpenEditProjectFileAsync(string projectPath)
+    {
+        if (_jobRunning)
+        {
+            MessageBox.Show("処理中は編集プロジェクトを開けません。処理が終わってから実行してください。", AppTitle, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
         JsonDocument doc;
         try
         {
