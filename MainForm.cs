@@ -182,7 +182,7 @@ internal sealed partial class MainForm : Form
         // ---- メニューバー ----
         var menuStrip = new MenuStrip
         {
-            Renderer = new AsterCutMenuRenderer(),
+            Renderer = new ToolStripProfessionalRenderer(new AsterCutMenuColorTable()),
         };
 
         var fileMenu = new ToolStripMenuItem("ファイル") { ForeColor = Theme.MenuFore };
@@ -784,7 +784,7 @@ internal sealed partial class MainForm : Form
         };
         var segmentContextMenu = new ContextMenuStrip
         {
-            Renderer = new AsterCutMenuRenderer(),
+            Renderer = new ToolStripProfessionalRenderer(new AsterCutMenuColorTable()),
         };
         var overwriteItem = new ToolStripMenuItem("上書き") { ForeColor = Theme.MenuFore };
         overwriteItem.Click += (_, _) => OverwriteCutSegment(_segmentContextIndex);
