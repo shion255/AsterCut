@@ -286,6 +286,16 @@ internal sealed partial class MainForm
         return true;
     }
 
+    private static bool ReplyBoolData(JsonElement reply, out bool value)
+    {
+        value = false;
+        if (!reply.TryGetProperty("error", out var error) || error.GetString() != "success") return false;
+        if (!reply.TryGetProperty("data", out var data)) return false;
+        if (data.ValueKind == JsonValueKind.True) { value = true; return true; }
+        if (data.ValueKind == JsonValueKind.False) { value = false; return true; }
+        return false;
+    }
+
     private void UpdateMpvTimelineOffset()
     {
         // mpv が最初に表示したフレームについて、mpv の時刻と ffmpeg の時刻の差を求める
@@ -675,6 +685,149 @@ internal sealed partial class MainForm
         return us;
     }
 
+    /// <summary>
+    /// mpv がシークで実際に表示したフレームの番号が安定するまで待って返す。
+    /// シークの実行中、mpv の time-pos は実際の着地位置ではなく狙いの値を返すため、
+    /// seeking が false になるまでは着地位置を判定できない。着地の判定は、同じ
+    /// フレームが一定時間続けて読めることで行う (フレームステップの途中など、
+    /// 表示がまだ動いている間は着地とみなさない)。狙ったフレームは短い確認で返し、
+    /// それ以外は長めに確かめる。読み取れなければ -1。
+    /// </summary>
+    private int WaitMpvLandedFrameIndex(int targetIndex, int timeoutMs = 5000, int settleMs = 800)
+    {
+        if (!TestFrameTableReady()) return -1;
+        var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
+        var lastIndex = -1;
+        var candidate = -2;
+        var candidateSince = DateTime.UtcNow;
+        while (DateTime.UtcNow < deadline)
+        {
+            bool? seeking = null;
+            var seekingReply = SendMpvCommand(new object[] { "get_property", "seeking" }, true, 1000);
+            if (seekingReply is { } sr && ReplyBoolData(sr, out var seekingValue))
+            {
+                seeking = seekingValue;
+            }
+            if (seeking != false)
+            {
+                candidate = -2;
+                Thread.Sleep(30);
+                continue;
+            }
+            // SetPlayerPosition が _mpvTimePos へ狙いの値を先行して入れるため、キャッシュではなく
+            // mpv からの応答そのもので着地位置を判定する。応答が無い間は判定しない。
+            var reply = SendMpvCommand(new object[] { "get_property", "time-pos" }, true, 1000);
+            if (reply is { } r && ReplyData(r, out var value))
+            {
+                _mpvTimePos = value;
+                var index = FindFrameIndexAtOrBefore(GetPreviewPositionUs());
+                var now = DateTime.UtcNow;
+                if (index != candidate)
+                {
+                    candidate = index;
+                    candidateSince = now;
+                }
+                var heldMs = (now - candidateSince).TotalMilliseconds;
+                if (index == targetIndex && heldMs >= 200) return index;
+                if (index != targetIndex && index >= 0 && heldMs >= settleMs) return index;
+                lastIndex = index;
+            }
+            Thread.Sleep(30);
+        }
+        return lastIndex;
+    }
+
+    /// <summary>
+    /// mpv のフレームステップで 1 フレームずつ進め、狙ったフレームに合わせる。
+    /// ステップをまとめて送ると、途中のフレームで止まったように見えることがあるため、
+    /// 1 回ごとに実際に進んだことを読み戻してから次を送る。届かなかったステップは送り直す。
+    /// 戻り値は、最終的に表示されたフレームの番号。
+    /// </summary>
+    /// <summary>
+    /// mpv 本来のフレームバックステップで 1 フレーム戻り、狙いのフレームに
+    /// 着地できたかどうかを返す。素材によってはバックステップがまったく
+    /// 動かないことがあるため、着地を読み戻して確かめる。
+    /// </summary>
+    private bool TryNativeBackStep(int targetIndex)
+    {
+        SendMpvCommand(new object[] { "frame-back-step" });
+        return WaitMpvLandedFrameIndex(targetIndex, 2500, 800) == targetIndex;
+    }
+
+    private int StepPlayerUpTo(int fromIndex, int targetIndex, DateTime deadline)
+    {
+        var current = fromIndex;
+        while (current >= 0 && current < targetIndex && DateTime.UtcNow < deadline)
+        {
+            var advanced = false;
+            for (var attempt = 0; attempt < 3 && !advanced; attempt++)
+            {
+                SendMpvCommand(new object[] { "frame-step" });
+                var next = WaitMpvLandedFrameIndex(current + 1, 3000, 1500);
+                if (next > current)
+                {
+                    current = next;
+                    advanced = true;
+                }
+            }
+            if (!advanced) break;
+        }
+        return current;
+    }
+
+    /// <summary>
+    /// フレーム表のフレームへ mpv を正確に合わせる。mpv のシークは、コンテナによっては
+    /// 狙ったフレーム以外へ着地することがある (MPEG-TS では数秒先のキーフレームへ
+    /// 行き過ぎることが実測された)。着地位置を読み戻し、行き過ぎていれば手前へ
+    /// シークし直し、足りなければ mpv のフレームステップで進めて、狙ったフレームに合わせる。
+    /// 戻り値は、最終的に表示されたフレームの番号 (確認できなければ狙った番号)。
+    /// </summary>
+    private int SeekPlayerToFrame(int targetIndex)
+    {
+        if (!TestFrameTableReady()) return targetIndex;
+        targetIndex = Math.Clamp(targetIndex, 0, _frameTimesUs!.Length - 1);
+        SetPlayerPosition(GetFrameSeekTimeSpan(targetIndex));
+        if (_previewIsPlaying) return targetIndex;
+        var landed = WaitMpvLandedFrameIndex(targetIndex);
+        if (landed < 0 || landed == targetIndex) return targetIndex;
+        var firstLanded = landed;
+        for (var round = 0; round < 4 && landed != targetIndex; round++)
+        {
+            if (landed > targetIndex)
+            {
+                // 行き過ぎた量をもとに、着地が狙いの少し手前になるようシークし直す。
+                var backIndex = Math.Max(0, targetIndex - (landed - targetIndex) - 10);
+                if (backIndex == 0 && round > 0) break;
+                SetPlayerPosition(GetFrameSeekTimeSpan(backIndex));
+            }
+            else
+            {
+                var gap = targetIndex - landed;
+                if (gap > 120)
+                {
+                    // 遠すぎる場合は、狙いの少し手前へシークし直してから詰める。
+                    SetPlayerPosition(GetFrameSeekTimeSpan(targetIndex - 60));
+                }
+                else
+                {
+                    // 1 フレームずつ確認しながら進める (まとめて送ると途中で止まって見えることがある)。
+                    landed = StepPlayerUpTo(landed, targetIndex, DateTime.UtcNow.AddSeconds(60));
+                    continue;
+                }
+            }
+            var next = WaitMpvLandedFrameIndex(targetIndex);
+            if (next < 0) break;
+            landed = next;
+        }
+        if (landed != targetIndex)
+        {
+            WriteLog($"プレビューの表示を狙ったフレームに合わせられませんでした (狙い {targetIndex} / 実際 {landed})。表示に合わせて位置を直します。");
+            return landed;
+        }
+        WriteLog($"プレビューのシーク位置を補正しました (狙い {targetIndex} / 最初の着地 {firstLanded})。");
+        return targetIndex;
+    }
+
     // ------------------------------------------------------------------
     // 再生・シーク操作
     // ------------------------------------------------------------------
@@ -712,7 +865,12 @@ internal sealed partial class MainForm
                 if (pausedFrameIndex >= 0)
                 {
                     // ラベルに表示している時刻のフレームを、そのまま表示する。
-                    try { SetPlayerPosition(GetFrameSeekTimeSpan(pausedFrameIndex)); } catch { }
+                    try
+                    {
+                        var finalIndex = SeekPlayerToFrame(pausedFrameIndex);
+                        if (finalIndex != pausedFrameIndex) _previewLogicalPositionMs = GetFrameFloorMs(finalIndex);
+                    }
+                    catch { }
                 }
             }
             else
@@ -801,6 +959,7 @@ internal sealed partial class MainForm
         try
         {
             var wasPlaying = _previewIsPlaying;
+            var wasAtEnd = _previewAtEnd;
             // 先に一時停止し、停止した時点の位置を基準にする。
             InvokePlayerPause();
             _previewIsPlaying = false;
@@ -841,6 +1000,7 @@ internal sealed partial class MainForm
 
             long newMs;
             TimeSpan seekSpan;
+            var newIndex = -1;
             if (useTable)
             {
                 var lastIndex = _frameTimesUs!.Length - 1;
@@ -850,7 +1010,7 @@ internal sealed partial class MainForm
                     SetPreviewEnded();
                     return;
                 }
-                var newIndex = Math.Max(0, Math.Min(lastIndex, currentIndex + direction));
+                newIndex = Math.Max(0, Math.Min(lastIndex, currentIndex + direction));
                 newMs = GetFrameFloorMs(newIndex);
                 seekSpan = GetFrameSeekTimeSpan(newIndex);
             }
@@ -877,7 +1037,31 @@ internal sealed partial class MainForm
             _previewSeekPendingUntil = DateTime.Now.AddMilliseconds(1000);
             _previewSeeking = false;
             _popupPreviewSeeking = false;
-            SetPlayerPosition(seekSpan);
+            if (useTable)
+            {
+                var finalIndex = newIndex;
+                if (!wasPlaying && !wasAtEnd && direction > 0)
+                {
+                    // 進む方向は mpv 本来のフレームステップで即座に動かす (シークも補正もしない)。
+                    SendMpvCommand(new object[] { "frame-step" });
+                }
+                else if (!wasPlaying && !wasAtEnd && direction < 0 && TryNativeBackStep(newIndex))
+                {
+                    // 戻る方向も、mpv 本来のフレームバックステップで狙いのフレームへ
+                    // 動けたときはそれで済ませる。
+                }
+                else
+                {
+                    finalIndex = SeekPlayerToFrame(newIndex);
+                }
+                newMs = GetFrameFloorMs(finalIndex);
+                _previewLogicalPositionMs = newMs;
+                _previewPendingSeekMs = newMs;
+            }
+            else
+            {
+                SetPlayerPosition(seekSpan);
+            }
             if (durationMs > 0)
             {
                 var sv = (int)Math.Round(newMs / (double)durationMs * 10000.0);
@@ -907,10 +1091,11 @@ internal sealed partial class MainForm
             var durationMs = GetPreviewDurationMs();
             long targetMs = 0;
             var seekSpan = TimeSpan.Zero;
+            var targetIndex = -1;
             if (TestFrameTableReady())
             {
                 // フレーム時刻テーブルがある場合は、実在する先頭／最終フレームへ正確に移動する。
-                var targetIndex = toEnd ? _frameTimesUs!.Length - 1 : 0;
+                targetIndex = toEnd ? _frameTimesUs!.Length - 1 : 0;
                 targetMs = GetFrameFloorMs(targetIndex);
                 seekSpan = GetFrameSeekTimeSpan(targetIndex);
             }
@@ -933,7 +1118,17 @@ internal sealed partial class MainForm
             _previewSeekPendingUntil = DateTime.Now.AddMilliseconds(1200);
             _previewSeeking = false;
             _popupPreviewSeeking = false;
-            SetPlayerPosition(seekSpan);
+            if (targetIndex >= 0)
+            {
+                var finalIndex = SeekPlayerToFrame(targetIndex);
+                targetMs = GetFrameFloorMs(finalIndex);
+                _previewLogicalPositionMs = targetMs;
+                _previewPendingSeekMs = targetMs;
+            }
+            else
+            {
+                SetPlayerPosition(seekSpan);
+            }
             if (durationMs > 0)
             {
                 var sliderValue = (int)Math.Round(targetMs / (double)durationMs * 10000.0);
@@ -1005,15 +1200,16 @@ internal sealed partial class MainForm
             var fraction = (double)trackBar.Value / trackBar.Maximum;
             var targetMs = Math.Clamp((long)Math.Round(durationMs * fraction), 0L, durationMs);
             var seekSpan = TimeSpan.FromMilliseconds(targetMs);
+            var seekFrameIndex = -1;
             if (targetMs < durationMs && TestFrameTableReady())
             {
                 // フレームの位置にぴったり合わせ、表示時刻をそのフレーム自身の時刻にする。
                 // ただし先頭フレームは、読み込み直後の状態に合わせ、ファイルの先頭 (0) として扱う
                 // (表示されるフレームは先頭フレームのまま)。
-                var frameIndex = FindFrameIndexAtOrBefore(targetMs * 1000L);
-                if (frameIndex < 0) frameIndex = 0;
-                targetMs = GetFrameFloorMs(frameIndex);
-                seekSpan = GetFrameSeekTimeSpan(frameIndex);
+                seekFrameIndex = FindFrameIndexAtOrBefore(targetMs * 1000L);
+                if (seekFrameIndex < 0) seekFrameIndex = 0;
+                targetMs = GetFrameFloorMs(seekFrameIndex);
+                seekSpan = GetFrameSeekTimeSpan(seekFrameIndex);
             }
             _previewLogicalPositionMs = targetMs;
             _previewPendingSeekMs = targetMs;
@@ -1028,7 +1224,17 @@ internal sealed partial class MainForm
             {
                 _previewAtEnd = false;
             }
-            SetPlayerPosition(seekSpan);
+            if (seekFrameIndex >= 0)
+            {
+                var finalIndex = SeekPlayerToFrame(seekFrameIndex);
+                targetMs = GetFrameFloorMs(finalIndex);
+                _previewLogicalPositionMs = targetMs;
+                _previewPendingSeekMs = targetMs;
+            }
+            else
+            {
+                SetPlayerPosition(seekSpan);
+            }
             UpdatePreviewPlaybackButtons();
             UpdatePreviewPositionLabel();
         }
@@ -1054,15 +1260,16 @@ internal sealed partial class MainForm
         {
             var targetMs = Math.Clamp(requestedMs, 0L, durationMs);
             var seekSpan = TimeSpan.FromMilliseconds(targetMs);
+            var seekFrameIndex = -1;
             if (targetMs < durationMs && TestFrameTableReady())
             {
                 // フレームの位置にぴったり合わせ、表示時刻をそのフレーム自身の時刻にする。
                 // ただし先頭フレームは、読み込み直後の状態に合わせ、ファイルの先頭 (0) として扱う
                 // (表示されるフレームは先頭フレームのまま)。
-                var frameIndex = FindFrameIndexAtOrAfter(targetMs * 1000L);
-                if (frameIndex < 0) frameIndex = 0;
-                targetMs = GetFrameFloorMs(frameIndex);
-                seekSpan = GetFrameSeekTimeSpan(frameIndex);
+                seekFrameIndex = FindFrameIndexAtOrAfter(targetMs * 1000L);
+                if (seekFrameIndex < 0) seekFrameIndex = 0;
+                targetMs = GetFrameFloorMs(seekFrameIndex);
+                seekSpan = GetFrameSeekTimeSpan(seekFrameIndex);
             }
             _previewLogicalPositionMs = targetMs;
             _previewPendingSeekMs = targetMs;
@@ -1079,7 +1286,17 @@ internal sealed partial class MainForm
             {
                 _previewAtEnd = false;
             }
-            SetPlayerPosition(seekSpan);
+            if (seekFrameIndex >= 0)
+            {
+                var finalIndex = SeekPlayerToFrame(seekFrameIndex);
+                targetMs = GetFrameFloorMs(finalIndex);
+                _previewLogicalPositionMs = targetMs;
+                _previewPendingSeekMs = targetMs;
+            }
+            else
+            {
+                SetPlayerPosition(seekSpan);
+            }
             var sliderValue = (int)Math.Round(targetMs / (double)durationMs * 10000.0);
             sliderValue = Math.Clamp(sliderValue, 0, 10000);
             if (_seekTrackBar != null) _seekTrackBar.Value = sliderValue;
