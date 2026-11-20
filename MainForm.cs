@@ -946,6 +946,16 @@ internal sealed partial class MainForm : Form
             else if (_tabs.SelectedTab == _cutTab) MovePreviewControls(false);
             if (_tabs.SelectedTab == _logTab) ScrollLogToEnd();
         };
+        _tabs.KeyDown += (_, e) =>
+        {
+            // タブ一覧にフォーカスがあるときの ↑ は最初のタブ、↓ は最後のタブへの移動にする
+            // (フォーム側のキー判定でも同じ移動をするが、届き方で反応が変わらないよう両方で受ける)。
+            // プレビュー操作中は ↑↓ が音量なので除く。
+            if (_previewKeyboardActive || e.KeyCode is not (Keys.Up or Keys.Down)) return;
+            _tabs.SelectedIndex = e.KeyCode == Keys.Up ? 0 : _tabs.TabCount - 1;
+            e.Handled = true;
+            e.SuppressKeyPress = true;
+        };
         _tabs.MouseWheel += (_, e) =>
         {
             // タブの見出しの上でのホイール操作で、隣のタブへ移動する。

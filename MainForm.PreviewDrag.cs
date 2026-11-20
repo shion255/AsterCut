@@ -120,6 +120,17 @@ internal sealed partial class MainForm
     /// </summary>
     protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
     {
+        // タブ一覧にフォーカスがあるとき (←→ でタブを移動できる状態) は、
+        // ↑ を最初のタブ、↓ を最後のタブへの移動にする。
+        // プレビュー操作中は ↑↓ が音量なので除く (プレビューの子ウィンドウをクリックしても
+        // フォーム側のフォーカスはタブ一覧に残ることがあるため、こちらでも判定する)。
+        if (!_previewKeyboardActive
+            && ActiveControl == _tabs
+            && keyData is Keys.Up or Keys.Down)
+        {
+            _tabs.SelectedIndex = keyData == Keys.Up ? 0 : _tabs.TabCount - 1;
+            return true;
+        }
         if (_previewKeyboardActive
             && keyData is Keys.Left or Keys.Right or Keys.Up or Keys.Down
             && (_tabs.SelectedTab == _cutTab || _tabs.SelectedTab == _chapterTab)
