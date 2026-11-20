@@ -1136,12 +1136,22 @@ internal sealed partial class MainForm
             _previewSnapTargetIndex = -1;
             var stepFromIndex = _previewSnapStepFromIndex;
             var stepDirection = _previewSnapStepDirection;
+            var escapeCount = _previewSnapEscapeCount;
             if (landedIndex == targetIndex)
             {
                 _previewSnapStepFromIndex = -1;
                 _previewSnapStepDirection = 0;
                 _previewSnapEscapeIndex = -1;
                 _previewSnapEscapeCount = 0;
+                if (escapeCount > 0)
+                {
+                    // キーフレームへの試行の末に狙いへ着地した。試行中は凍結していた表示を、
+                    // ここで着地したフレームへ合わせる。
+                    var keyLandedMs = GetFrameFloorMs(landedIndex);
+                    _previewLogicalPositionMs = keyLandedMs;
+                    _previewPendingSeekMs = keyLandedMs;
+                    UpdatePreviewSeekBarValues(keyLandedMs);
+                }
                 return;
             }
             // フレーム移動で表示が動かなかった (着地が移動元と同じか、移動と逆側) ときは、
@@ -1156,11 +1166,9 @@ internal sealed partial class MainForm
                 {
                     _previewSnapEscapeIndex = keyIndex;
                     _previewSnapEscapeCount++;
-                    var keyMs = GetFrameFloorMs(keyIndex);
-                    _previewLogicalPositionMs = keyMs;
-                    _previewPendingSeekMs = keyMs;
+                    // 試している間は位置表示を動かさない。論理位置とシークバーは移動の狙いのまま
+                    // 保持し、着地が確定したときにだけ、まとめて実際のフレームへ合わせる。
                     SetPlayerPosition(GetFrameSeekTimeSpan(keyIndex));
-                    UpdatePreviewSeekBarValues(keyMs);
                     WriteLog($"フレーム移動で表示が動かなかったため、{(stepDirection < 0 ? "前の" : "次の")}キーフレームへ移動しました ({stepFromIndex}f → {keyIndex}f)。");
                     ArmPreviewLandingSnap(keyIndex, keepStepContext: true);
                     return;
