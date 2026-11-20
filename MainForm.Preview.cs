@@ -32,6 +32,9 @@ internal sealed partial class MainForm
     private int _previewSnapTargetIndex = -1;
     private DateTime _previewSnapArmTime = DateTime.MinValue;
     private DateTime _previewSnapDeadline = DateTime.MinValue;
+    // フレーム移動から待ち受けたときの移動元フレームと方向 (表示が動かなかったときの予備動作の判定用。方向 0 はフレーム移動以外)。
+    private int _previewSnapStepFromIndex = -1;
+    private int _previewSnapStepDirection = 0;
     private DateTime _previewWarmupUntil = DateTime.MinValue;
     private long _previewDurationMs;
     private bool _previewSeeking;
@@ -632,6 +635,26 @@ internal sealed partial class MainForm
         return FrameIndex.IndexAtOrBefore(_frameTimesUs!, timeUs);
     }
 
+    // 指定フレームより前にある最後のキーフレームのフレーム番号。なければ -1。
+    private int FindPreviousKeyframeIndex(int frameIndex)
+    {
+        if (_frameKeyTimesUs == null || _frameTimesUs == null) return -1;
+        if (frameIndex < 0 || frameIndex >= _frameTimesUs.Length) return -1;
+        var keyPos = FrameIndex.IndexAtOrBefore(_frameKeyTimesUs, _frameTimesUs[frameIndex] - 1);
+        if (keyPos < 0) return -1;
+        return FrameIndex.IndexAtOrBefore(_frameTimesUs, _frameKeyTimesUs[keyPos]);
+    }
+
+    // 指定フレームより後にある最初のキーフレームのフレーム番号。なければ -1。
+    private int FindNextKeyframeIndex(int frameIndex)
+    {
+        if (_frameKeyTimesUs == null || _frameTimesUs == null) return -1;
+        if (frameIndex < 0 || frameIndex >= _frameTimesUs.Length) return -1;
+        var keyPos = FrameIndex.IndexAtOrBefore(_frameKeyTimesUs, _frameTimesUs[frameIndex]);
+        if (keyPos + 1 >= _frameKeyTimesUs.Length) return -1;
+        return FrameIndex.IndexAtOrBefore(_frameTimesUs, _frameKeyTimesUs[keyPos + 1]);
+    }
+
     /// <summary>
     /// 指定時刻以後で最初のフレームの番号。開始・終了欄の値はフレームの位置をミリ秒へ
     /// 切り捨てたものなので、そのフレーム自身に戻るには「その値を含むフレーム」、
@@ -939,7 +962,7 @@ internal sealed partial class MainForm
             _popupPreviewSeeking = false;
             if (useTable && !wasPlaying && !wasAtEnd) SuppressAudioForStep();
             SetPlayerPosition(seekSpan);
-            if (snapIndex >= 0) ArmPreviewLandingSnap(snapIndex);
+            if (snapIndex >= 0) ArmPreviewLandingSnap(snapIndex, currentIndex, direction);
             if (durationMs > 0)
             {
                 var sv = (int)Math.Round(newMs / (double)durationMs * 10000.0);
@@ -1045,8 +1068,10 @@ internal sealed partial class MainForm
 
     // シークのあと、実際に表示されたフレームへ位置を合わせるための待ち受けを登録する。
     // 合わせ直すためのシークはせず、mpv の着地を読み戻して表示と位置をそちらへ合わせる。
-    private void ArmPreviewLandingSnap(int targetIndex)
+    private void ArmPreviewLandingSnap(int targetIndex, int stepFromIndex = -1, int stepDirection = 0)
     {
+        _previewSnapStepFromIndex = stepFromIndex;
+        _previewSnapStepDirection = stepDirection;
         if (!TestFrameTableReady() || targetIndex < 0)
         {
             _previewSnapTargetIndex = -1;
@@ -1055,6 +1080,18 @@ internal sealed partial class MainForm
         _previewSnapTargetIndex = targetIndex;
         _previewSnapArmTime = DateTime.Now;
         _previewSnapDeadline = DateTime.Now.AddMilliseconds(5000);
+    }
+
+    // 3 つのシークバーの位置を指定した再生位置へ合わせる。
+    private void UpdatePreviewSeekBarValues(long positionMs)
+    {
+        var durationMs = GetPreviewDurationMs();
+        if (durationMs <= 0) return;
+        var sv = (int)Math.Round(positionMs / (double)durationMs * 10000.0);
+        sv = Math.Clamp(sv, 0, 10000);
+        if (_seekTrackBar != null) _seekTrackBar.Value = sv;
+        if (_popupSeekTrackBar != null) _popupSeekTrackBar.Value = sv;
+        if (_clipSeekTrackBar != null) _clipSeekTrackBar.Value = sv;
     }
 
     // 待ち受け中はプレビューのタイマーから定期的に呼ばれ、シークが終わっていたら
@@ -1089,19 +1126,33 @@ internal sealed partial class MainForm
             }
             var targetIndex = _previewSnapTargetIndex;
             _previewSnapTargetIndex = -1;
+            var stepFromIndex = _previewSnapStepFromIndex;
+            var stepDirection = _previewSnapStepDirection;
+            _previewSnapStepFromIndex = -1;
+            _previewSnapStepDirection = 0;
             if (landedIndex == targetIndex) return;
+            // フレーム移動で表示が動かなかった (着地が移動元と同じか、移動と逆側) ときは、
+            // 表示できる前後のキーフレームへ 1 回だけ移動する。
+            if (stepFromIndex >= 0 && stepDirection != 0 &&
+                ((stepDirection < 0 && landedIndex >= stepFromIndex) || (stepDirection > 0 && landedIndex <= stepFromIndex)))
+            {
+                var keyIndex = stepDirection < 0 ? FindPreviousKeyframeIndex(stepFromIndex) : FindNextKeyframeIndex(stepFromIndex);
+                if (keyIndex >= 0)
+                {
+                    var keyMs = GetFrameFloorMs(keyIndex);
+                    _previewLogicalPositionMs = keyMs;
+                    _previewPendingSeekMs = keyMs;
+                    SetPlayerPosition(GetFrameSeekTimeSpan(keyIndex));
+                    UpdatePreviewSeekBarValues(keyMs);
+                    WriteLog($"フレーム移動で表示が動かなかったため、{(stepDirection < 0 ? "前の" : "次の")}キーフレームへ移動しました ({stepFromIndex}f → {keyIndex}f)。");
+                    ArmPreviewLandingSnap(keyIndex);
+                    return;
+                }
+            }
             var landedMs = GetFrameFloorMs(landedIndex);
             _previewLogicalPositionMs = landedMs;
             _previewPendingSeekMs = landedMs;
-            var durationMs = GetPreviewDurationMs();
-            if (durationMs > 0)
-            {
-                var sv = (int)Math.Round(landedMs / (double)durationMs * 10000.0);
-                sv = Math.Clamp(sv, 0, 10000);
-                if (_seekTrackBar != null) _seekTrackBar.Value = sv;
-                if (_popupSeekTrackBar != null) _popupSeekTrackBar.Value = sv;
-                if (_clipSeekTrackBar != null) _clipSeekTrackBar.Value = sv;
-            }
+            UpdatePreviewSeekBarValues(landedMs);
             WriteLog($"プレビューの位置を表示されているフレームに合わせました (狙い {targetIndex}f / 表示 {landedIndex}f)。");
         }
         catch { /* 読み戻しに失敗しても表示はそのままにする */ }
