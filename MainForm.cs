@@ -2061,6 +2061,7 @@ internal sealed partial class MainForm : Form
             _durationMs = 0;
             UpdateAudioList();
             UpdateSourceInfoPanel();
+            UpdateDataBroadcastCheckBoxStyle();
 
             var ffprobe = GetFfprobePath();
             var probe = await Probe.InvokeAsync(ffprobe, _inputPath);
@@ -2077,6 +2078,7 @@ internal sealed partial class MainForm : Form
 
             UpdateAudioList();
             UpdateSourceInfoPanel();
+            UpdateDataBroadcastCheckBoxStyle();
             ClearSegmentsForNewInput();
             _cutEndBox.Text = _durationMs > 0 ? TimeText.FormatClockFromMs(_durationMs) : "00:00:00.000";
             SetPreviewSource(_inputPath);
@@ -2473,6 +2475,7 @@ internal sealed partial class MainForm : Form
         _videoStreams = new List<ProbeStream>();
         _audioStreams = new List<ProbeStream>();
         _durationMs = 0;
+        UpdateDataBroadcastCheckBoxStyle();
         _audioList.Items.Clear();
         CloseSegmentPreviewPopup();
         CloseClippingForm();

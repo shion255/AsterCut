@@ -30,6 +30,21 @@ internal sealed partial class MainForm
     private CheckBox _keepMetadataCheckBox = null!;
     private CheckBox _writeEditorMetadataCheckBox = null!;
     private CheckBox _keepDataBroadcastCheckBox = null!;
+    private Font? _checkBoxBoldFont;
+
+    /// <summary>入力した TS にデータ放送のストリームが含まれる場合は、「データ放送を引き継ぐ」を太字にする。</summary>
+    private void UpdateDataBroadcastCheckBoxStyle()
+    {
+        if (_keepDataBroadcastCheckBox == null) return;
+        // データ放送は、PMT の stream_type が 0x0D (DSM-CC) のストリームで判定する。
+        // codec_type が data のストリーム (字幕などの 0x06) では判定しない。
+        var hasDataBroadcast = _probe != null
+            && (_probe.FormatName ?? "").Contains("mpegts", StringComparison.OrdinalIgnoreCase)
+            && _probe.Streams.Exists(s => string.Equals(s.CodecTag, "0x000d", StringComparison.OrdinalIgnoreCase));
+        _keepDataBroadcastCheckBox.Font = hasDataBroadcast
+            ? (_checkBoxBoldFont ??= new Font(Font, FontStyle.Bold))
+            : Font;
+    }
     private Panel _editSummaryGroup = null!;
     private Label _editSummaryLabel = null!;
     private Button _outputRunButton = null!;
@@ -229,7 +244,7 @@ internal sealed partial class MainForm
         _outputPathGroup.Controls.Add(_keepMetadataCheckBox);
         _writeEditorMetadataCheckBox = MakeCheckBox("メタデータを書き込む（編集内容・編集日時・区間・解像度・エンコード設定など。MKV / MP4 / MOV / M4V のみ）", 150, 980, true);
         _outputPathGroup.Controls.Add(_writeEditorMetadataCheckBox);
-        _keepDataBroadcastCheckBox = MakeCheckBox("データ放送を引き継ぐ（TS へ出力する無劣化カットで、データ放送のストリームも出力に残す）", 176, 980, true);
+        _keepDataBroadcastCheckBox = MakeCheckBox("データ放送を引き継ぐ（TS から TS への出力で、データ放送のストリームも出力に残す）", 176, 980, true);
         _outputPathGroup.Controls.Add(_keepDataBroadcastCheckBox);
 
         _editSummaryGroup = Theme.MakeGroupPanel(10, 239, 1015, 146, "編集内容");
