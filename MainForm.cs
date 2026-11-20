@@ -677,26 +677,36 @@ internal sealed partial class MainForm : Form
             catch { /* 時刻を解釈できない場合は何もしない */ }
         };
         _cutTab.Controls.Add(seekToEndButton);
-        var cutAddButton = Theme.MakeButton("区間を追加", 535, 98, 110, 32);
+        var cutAddButton = Theme.MakeButton("区間を追加", 520, 98, 104, 32);
         cutAddButton.Click += (_, _) => AddCutSegment();
         _cutTab.Controls.Add(cutAddButton);
-        var clipAddButton = Theme.MakeButton("クリッピングして追加", 653, 98, 140, 32);
+        var clipAddButton = Theme.MakeButton("クリッピングして追加", 630, 98, 140, 32);
         clipAddButton.Click += (_, _) => AddCutSegment(true);
         _cutTab.Controls.Add(clipAddButton);
-        _cutRemoveButton = Theme.MakeButton("選択を削除", 801, 98, 105, 32);
+        _cutRemoveButton = Theme.MakeButton("選択を削除", 776, 98, 105, 32);
         _cutRemoveButton.Click += (_, _) => RemoveSelectedSegment();
         _cutTab.Controls.Add(_cutRemoveButton);
-        var cutUpButton = Theme.MakeButton("上へ", 914, 98, 48, 32);
+        var cutUpButton = new ArrowButton
+        {
+            Location = new Point(887, 98),
+            Size = new Size(42, 32),
+            DirectionUp = true,
+        };
         cutUpButton.Click += (_, _) => MoveCutSegment(-1);
         _cutTab.Controls.Add(cutUpButton);
-        var cutDownButton = Theme.MakeButton("下へ", 968, 98, 48, 32);
+        var cutDownButton = new ArrowButton
+        {
+            Location = new Point(935, 98),
+            Size = new Size(42, 32),
+            DirectionUp = false,
+        };
         cutDownButton.Click += (_, _) => MoveCutSegment(1);
         _cutTab.Controls.Add(cutDownButton);
-        var cutOrganizeButton = Theme.MakeButton("整理", 1022, 98, 58, 32);
-        cutOrganizeButton.Click += (_, _) => OrganizeCutSegments();
-        _cutTab.Controls.Add(cutOrganizeButton);
-        var organizeToolTip = new ToolTip();
-        organizeToolTip.SetToolTip(cutOrganizeButton, "通常カットを先に、各区間を開始時刻順に並べ替えます。");
+        var cutSplitAllButton = Theme.MakeButton("全区間分割", 983, 98, 105, 32);
+        cutSplitAllButton.Click += (_, _) => SplitAllCutSegments();
+        _cutTab.Controls.Add(cutSplitAllButton);
+        var splitAllToolTip = new ToolTip();
+        splitAllToolTip.SetToolTip(cutSplitAllButton, "すべての区間を分割し、開始時刻順に並べ替えます。");
 
         // 区間一覧のグループ。
         var segmentGroup = _segmentGroup = new Panel

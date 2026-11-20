@@ -36,7 +36,7 @@ internal sealed class Segment
 }
 
 /// <summary>
-/// 区間編集 (一覧、追加・削除・並べ替え・整理・上書き、元に戻す/やり直し、ファイル数表示)。
+/// 区間編集 (一覧、追加・削除・並べ替え・全区間分割・上書き、元に戻す/やり直し、ファイル数表示)。
 /// </summary>
 internal sealed partial class MainForm
 {
@@ -579,7 +579,7 @@ internal sealed partial class MainForm
         _segmentList.SelectedIndex = next;
     }
 
-    private void OrganizeCutSegments()
+    private void SplitAllCutSegments()
     {
         if (_segments.Count < 2) return;
         Segment? selectedSegment = null;
@@ -588,20 +588,17 @@ internal sealed partial class MainForm
         {
             selectedSegment = _segments[selectedIndex];
         }
-        // グループ分けは保ったまま、各グループの中だけを並べ替える。
-        var ordered = new List<Segment>();
-        foreach (var group in BuildSegmentGroups())
-        {
-            ordered.AddRange(group
-                .Select((segment, i) => (Segment: segment, TypeOrder: segment.HasClipping ? 1 : 0, segment.StartMs, OriginalIndex: i))
-                .OrderBy(x => x.TypeOrder)
-                .ThenBy(x => x.StartMs)
-                .ThenBy(x => x.OriginalIndex)
-                .Select(x => x.Segment));
-        }
-        PushSegmentUndoSnapshot("区間一覧の整理");
+        // 結合・分割を問わず、すべての区間を切り離して開始時刻順に並べ替える。
+        var ordered = _segments
+            .Select((segment, i) => (Segment: segment, segment.StartMs, OriginalIndex: i))
+            .OrderBy(x => x.StartMs)
+            .ThenBy(x => x.OriginalIndex)
+            .Select(x => x.Segment)
+            .ToList();
+        PushSegmentUndoSnapshot("全区間分割");
         _segments.Clear();
         _segments.AddRange(ordered);
+        foreach (var segment in _segments) segment.JoinWithPrevious = false;
         RefreshSegmentList();
         if (selectedSegment != null)
         {
@@ -614,7 +611,7 @@ internal sealed partial class MainForm
                 }
             }
         }
-        WriteLog("区間一覧を整理: グループごとに、通常カットを開始時刻順、クリッピング区間を開始時刻順に並べ替えました。");
+        WriteLog("全区間分割: すべての区間を分割し、開始時刻順に並べ替えました。");
     }
 
     private void ApplySegmentToCutBoxes(int index)
