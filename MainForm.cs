@@ -1744,11 +1744,17 @@ internal sealed partial class MainForm : Form
     {
         using var dialog = new OpenFileDialog
         {
-            Filter = "動画ファイル|*.mkv;*.mp4;*.mov;*.avi;*.webm;*.m4v;*.ts;*.m2ts;*.mpg;*.mpeg;*.wmv;*.flv|すべてのファイル (*.*)|*.*",
+            Filter = "動画ファイル|*.mkv;*.mp4;*.mov;*.avi;*.webm;*.m4v;*.ts;*.m2ts;*.mpg;*.mpeg;*.wmv;*.flv;*.acproj|すべてのファイル (*.*)|*.*",
             Title = "入力動画を選択",
         };
         if (dialog.ShowDialog(this) == DialogResult.OK)
         {
+            // プロジェクトファイルは、動画ではなく編集プロジェクトとして開く。
+            if (string.Equals(Path.GetExtension(dialog.FileName), ".acproj", StringComparison.OrdinalIgnoreCase))
+            {
+                _ = OpenEditProjectFileAsync(dialog.FileName);
+                return;
+            }
             _inputPathBox.Text = dialog.FileName;
             _ = LoadInputFileAsync(dialog.FileName);
         }
