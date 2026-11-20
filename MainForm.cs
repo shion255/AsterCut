@@ -1077,7 +1077,7 @@ internal sealed partial class MainForm : Form
             }
         };
         _previewTimer = new System.Windows.Forms.Timer { Interval = 100 };
-        _previewTimer.Tick += (_, _) => UpdatePreviewPositionLabel();
+        _previewTimer.Tick += (_, _) => { UpdatePreviewLandingSnap(); UpdatePreviewPositionLabel(); };
         _previewTimer.Start();
 
         _previewDragTimer = new System.Windows.Forms.Timer { Interval = 20 };

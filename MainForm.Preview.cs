@@ -28,6 +28,10 @@ internal sealed partial class MainForm
     private long _previewLogicalPositionMs;
     private long _previewPendingSeekMs = -1;
     private DateTime _previewSeekPendingUntil = DateTime.MinValue;
+    // シーク後に実際に表示されたフレームへ位置を合わせるための待ち受け (狙いのフレーム番号。-1 は待ち受けなし)。
+    private int _previewSnapTargetIndex = -1;
+    private DateTime _previewSnapArmTime = DateTime.MinValue;
+    private DateTime _previewSnapDeadline = DateTime.MinValue;
     private DateTime _previewWarmupUntil = DateTime.MinValue;
     private long _previewDurationMs;
     private bool _previewSeeking;
@@ -286,6 +290,16 @@ internal sealed partial class MainForm
         return true;
     }
 
+    private static bool ReplyBoolData(JsonElement reply, out bool value)
+    {
+        value = false;
+        if (!reply.TryGetProperty("error", out var error) || error.GetString() != "success") return false;
+        if (!reply.TryGetProperty("data", out var data)) return false;
+        if (data.ValueKind == JsonValueKind.True) { value = true; return true; }
+        if (data.ValueKind == JsonValueKind.False) { value = false; return true; }
+        return false;
+    }
+
     private void UpdateMpvTimelineOffset()
     {
         // mpv が最初に表示したフレームについて、mpv の時刻と ffmpeg の時刻の差を求める
@@ -533,6 +547,7 @@ internal sealed partial class MainForm
             _previewLogicalPositionMs = 0;
             _previewPendingSeekMs = -1;
             _previewSeekPendingUntil = DateTime.MinValue;
+            _previewSnapTargetIndex = -1;
             _previewWarmupUntil = DateTime.MinValue;
             _previewDurationMs = 0;
             if (_mpvDuration > 0) _previewDurationMs = (long)Math.Round(_mpvDuration * 1000.0);
@@ -557,6 +572,7 @@ internal sealed partial class MainForm
             _previewLogicalPositionMs = 0;
             _previewPendingSeekMs = -1;
             _previewSeekPendingUntil = DateTime.MinValue;
+            _previewSnapTargetIndex = -1;
             _previewDurationMs = 0;
             _previewSeeking = false;
             _popupPreviewSeeking = false;
@@ -694,6 +710,7 @@ internal sealed partial class MainForm
     {
         if (!_previewReady || !TestPlayerAvailable()) return;
         RestoreStepAudio();
+        _previewSnapTargetIndex = -1;
         try
         {
             if (_previewIsPlaying)
@@ -881,6 +898,7 @@ internal sealed partial class MainForm
 
             long newMs;
             TimeSpan seekSpan;
+            var snapIndex = -1;
             if (useTable)
             {
                 var lastIndex = _frameTimesUs!.Length - 1;
@@ -893,6 +911,7 @@ internal sealed partial class MainForm
                 var newIndex = Math.Max(0, Math.Min(lastIndex, currentIndex + direction));
                 newMs = GetFrameFloorMs(newIndex);
                 seekSpan = GetFrameSeekTimeSpan(newIndex);
+                snapIndex = newIndex;
             }
             else
             {
@@ -920,6 +939,7 @@ internal sealed partial class MainForm
             _popupPreviewSeeking = false;
             if (useTable && !wasPlaying && !wasAtEnd) SuppressAudioForStep();
             SetPlayerPosition(seekSpan);
+            if (snapIndex >= 0) ArmPreviewLandingSnap(snapIndex);
             if (durationMs > 0)
             {
                 var sv = (int)Math.Round(newMs / (double)durationMs * 10000.0);
@@ -949,12 +969,14 @@ internal sealed partial class MainForm
             var durationMs = GetPreviewDurationMs();
             long targetMs = 0;
             var seekSpan = TimeSpan.Zero;
+            var snapIndex = -1;
             if (TestFrameTableReady())
             {
                 // フレーム時刻テーブルがある場合は、実在する先頭／最終フレームへ正確に移動する。
                 var targetIndex = toEnd ? _frameTimesUs!.Length - 1 : 0;
                 targetMs = GetFrameFloorMs(targetIndex);
                 seekSpan = GetFrameSeekTimeSpan(targetIndex);
+                snapIndex = targetIndex;
             }
             else if (toEnd)
             {
@@ -976,6 +998,7 @@ internal sealed partial class MainForm
             _previewSeeking = false;
             _popupPreviewSeeking = false;
             SetPlayerPosition(seekSpan);
+            if (snapIndex >= 0) ArmPreviewLandingSnap(snapIndex);
             if (durationMs > 0)
             {
                 var sliderValue = (int)Math.Round(targetMs / (double)durationMs * 10000.0);
@@ -1020,6 +1043,70 @@ internal sealed partial class MainForm
         return logical;
     }
 
+    // シークのあと、実際に表示されたフレームへ位置を合わせるための待ち受けを登録する。
+    // 合わせ直すためのシークはせず、mpv の着地を読み戻して表示と位置をそちらへ合わせる。
+    private void ArmPreviewLandingSnap(int targetIndex)
+    {
+        if (!TestFrameTableReady() || targetIndex < 0)
+        {
+            _previewSnapTargetIndex = -1;
+            return;
+        }
+        _previewSnapTargetIndex = targetIndex;
+        _previewSnapArmTime = DateTime.Now;
+        _previewSnapDeadline = DateTime.Now.AddMilliseconds(5000);
+    }
+
+    // 待ち受け中はプレビューのタイマーから定期的に呼ばれ、シークが終わっていたら
+    // 実際に表示されているフレームを読み戻し、狙いとずれていれば位置をそちらへ合わせる。
+    private void UpdatePreviewLandingSnap()
+    {
+        if (_previewSnapTargetIndex < 0) return;
+        if (!_previewReady || !TestPlayerAvailable() || _previewIsPlaying || _previewAtEnd)
+        {
+            _previewSnapTargetIndex = -1;
+            return;
+        }
+        var now = DateTime.Now;
+        if (now > _previewSnapDeadline)
+        {
+            _previewSnapTargetIndex = -1;
+            return;
+        }
+        // 連続したシークの途中では判定しない (最後のシークから少し待つ)。
+        if ((now - _previewSnapArmTime).TotalMilliseconds < 250) return;
+        try
+        {
+            // シークの実行中は time-pos が狙いの値を返すため、終わるまで着地を判定しない。
+            var reply = SendMpvCommand(new object[] { "get_property", "seeking" }, true, 150);
+            if (reply is not { } r || !ReplyBoolData(r, out var seeking) || seeking) return;
+            UpdatePlayerPositionNow();
+            var landedIndex = FindFrameIndexAtOrBefore(GetPreviewPositionUs());
+            if (landedIndex < 0)
+            {
+                _previewSnapTargetIndex = -1;
+                return;
+            }
+            var targetIndex = _previewSnapTargetIndex;
+            _previewSnapTargetIndex = -1;
+            if (landedIndex == targetIndex) return;
+            var landedMs = GetFrameFloorMs(landedIndex);
+            _previewLogicalPositionMs = landedMs;
+            _previewPendingSeekMs = landedMs;
+            var durationMs = GetPreviewDurationMs();
+            if (durationMs > 0)
+            {
+                var sv = (int)Math.Round(landedMs / (double)durationMs * 10000.0);
+                sv = Math.Clamp(sv, 0, 10000);
+                if (_seekTrackBar != null) _seekTrackBar.Value = sv;
+                if (_popupSeekTrackBar != null) _popupSeekTrackBar.Value = sv;
+                if (_clipSeekTrackBar != null) _clipSeekTrackBar.Value = sv;
+            }
+            WriteLog($"プレビューの位置を表示されているフレームに合わせました (狙い {targetIndex}f / 表示 {landedIndex}f)。");
+        }
+        catch { /* 読み戻しに失敗しても表示はそのままにする */ }
+    }
+
     private void UpdatePreviewLabelsForSeek(SeekTrackBar trackBar)
     {
         if (!_previewReady || trackBar == null) return;
@@ -1048,6 +1135,7 @@ internal sealed partial class MainForm
             var fraction = (double)trackBar.Value / trackBar.Maximum;
             var targetMs = Math.Clamp((long)Math.Round(durationMs * fraction), 0L, durationMs);
             var seekSpan = TimeSpan.FromMilliseconds(targetMs);
+            var snapIndex = -1;
             if (targetMs < durationMs && TestFrameTableReady())
             {
                 // フレームの位置にぴったり合わせ、表示時刻をそのフレーム自身の時刻にする。
@@ -1057,6 +1145,7 @@ internal sealed partial class MainForm
                 if (frameIndex < 0) frameIndex = 0;
                 targetMs = GetFrameFloorMs(frameIndex);
                 seekSpan = GetFrameSeekTimeSpan(frameIndex);
+                snapIndex = frameIndex;
             }
             _previewLogicalPositionMs = targetMs;
             _previewPendingSeekMs = targetMs;
@@ -1072,6 +1161,7 @@ internal sealed partial class MainForm
                 _previewAtEnd = false;
             }
             SetPlayerPosition(seekSpan);
+            if (snapIndex >= 0) ArmPreviewLandingSnap(snapIndex);
             UpdatePreviewPlaybackButtons();
             UpdatePreviewPositionLabel();
         }
@@ -1097,6 +1187,7 @@ internal sealed partial class MainForm
         {
             var targetMs = Math.Clamp(requestedMs, 0L, durationMs);
             var seekSpan = TimeSpan.FromMilliseconds(targetMs);
+            var snapIndex = -1;
             if (targetMs < durationMs && TestFrameTableReady())
             {
                 // フレームの位置にぴったり合わせ、表示時刻をそのフレーム自身の時刻にする。
@@ -1106,6 +1197,7 @@ internal sealed partial class MainForm
                 if (frameIndex < 0) frameIndex = 0;
                 targetMs = GetFrameFloorMs(frameIndex);
                 seekSpan = GetFrameSeekTimeSpan(frameIndex);
+                snapIndex = frameIndex;
             }
             _previewLogicalPositionMs = targetMs;
             _previewPendingSeekMs = targetMs;
@@ -1123,6 +1215,7 @@ internal sealed partial class MainForm
                 _previewAtEnd = false;
             }
             SetPlayerPosition(seekSpan);
+            if (snapIndex >= 0) ArmPreviewLandingSnap(snapIndex);
             var sliderValue = (int)Math.Round(targetMs / (double)durationMs * 10000.0);
             sliderValue = Math.Clamp(sliderValue, 0, 10000);
             if (_seekTrackBar != null) _seekTrackBar.Value = sliderValue;
