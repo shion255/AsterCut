@@ -1319,12 +1319,13 @@ internal sealed partial class MainForm
             {
                 var formatStartSec = Probe.ParseSeconds(_probe.FormatStartTime);
                 var videoFirstAbsSec = Probe.ParseSeconds(_videoStreams[0].StartTime);
-                // trim (start_rel) は映像の先頭パケットを起点に範囲を数えるため、実際に書き出される
+                var bsfZeroAppUs = GetLosslessBsfZeroAppUs(ffprobe, formatStartSec, videoFirstAbsSec);
+                var bsfZeroAbsSec = formatStartSec + bsfZeroAppUs / 1000000.0;
+                // trim (start_rel) は ffmpeg が実際に渡す先頭パケットを起点に範囲を数えるため、実際に書き出される
                 // 先頭パケットの位置と、末尾のアンカーの位置の両方を実測して長さを決める。
-                var firstExportedMs = ProbeFirstExportedVideoMs(ffprobe, startMs, formatStartSec, videoFirstAbsSec);
-                // アンカーは、指定した終了位置以前で最後のものを探す。trim (start_rel) は映像ストリームの
-                // 先頭パケットを起点に範囲を数えるため、先頭パケットがコンテナの先頭より後ろにある素材では
-                // 書き出される映像の範囲全体がその分だけ後ろへずれる。範囲の終わりを起点から数えると、
+                var firstExportedMs = ProbeFirstExportedVideoMs(ffprobe, startMs, formatStartSec, bsfZeroAbsSec);
+                // アンカーは、指定した終了位置以前で最後のものを探す。trim の長さは書き出された
+                // 先頭パケットから数えられるため、範囲の終わりをアプリの時刻軸の開始位置から数えると、
                 // 映像が指定した終了位置より後ろまで残って音声だけが先に終わってしまうので、
                 // 上限はあくまで指定した終了位置 (アプリの時刻軸) そのものにする。
                 var (anchorUs, anchorEndUs) = firstExportedMs >= 0
@@ -1333,7 +1334,7 @@ internal sealed partial class MainForm
                 var lastAnchorMs = anchorUs >= 0 ? (long)Math.Round(anchorUs / 1000.0) : -1;
                 if (firstExportedMs >= 0 && lastAnchorMs > firstExportedMs)
                 {
-                    var videoFirstAppUs = (long)Math.Round((videoFirstAbsSec - formatStartSec) * 1000000.0);
+                    var videoFirstAppUs = bsfZeroAppUs;
                     long adjusted;
                     var endAligned = false;
                     if (anchorEndUs > anchorUs && anchorEndUs / 1000 <= endMs + 100)
@@ -1376,8 +1377,8 @@ internal sealed partial class MainForm
     /// <summary>
     /// 無劣化カットの映像の開始位置 (trim の start_rel 起点で数えた ms) と長さを、開始位置以前の
     /// 最後の I フレームと、終了位置以前の最後の I / P フレームに合わせた値で返す。
-    /// trim (start_rel) は映像の先頭パケットを起点に範囲を数えるため、アプリの時刻軸の開始位置を
-    /// そのまま渡すと、先頭パケットがコンテナの先頭より後ろにある素材では映像の範囲全体が
+    /// trim (start_rel) は ffmpeg が実際に渡す先頭パケットを起点に範囲を数えるため、アプリの時刻軸の開始位置を
+    /// そのまま渡すと、そのパケットがコンテナの先頭より後ろにある素材では映像の範囲全体が
     /// その分だけ後ろへずれる。さらに、開始位置が GOP の途中だと、先頭のフレームが参照する
     /// I フレームが範囲から外れて、先頭の GOP がまるごとデコードできなくなる。
     /// 開始位置を I フレームに合わせ、長さは実際に書き出される先頭パケットから末尾の
@@ -1398,11 +1399,14 @@ internal sealed partial class MainForm
                 var formatStartSec = Probe.ParseSeconds(_probe.FormatStartTime);
                 var videoFirstAbsSec = Probe.ParseSeconds(_videoStreams[0].StartTime);
                 var videoFirstAppMs = (long)Math.Round((videoFirstAbsSec - formatStartSec) * 1000.0);
+                var bsfZeroAppUs = GetLosslessBsfZeroAppUs(ffprobe, formatStartSec, videoFirstAbsSec);
+                var bsfZeroAppMs = (long)Math.Round(bsfZeroAppUs / 1000.0);
+                var bsfZeroAbsSec = formatStartSec + bsfZeroAppUs / 1000000.0;
                 var (anchorAppMs, nextKeyAppMs) = ProbeKeyFramesAroundMs(ffprobe, startMs, formatStartSec);
                 long videoStartMs;
                 if (anchorAppMs >= 0)
                 {
-                    videoStartMs = anchorAppMs - videoFirstAppMs;
+                    videoStartMs = anchorAppMs - bsfZeroAppMs;
                 }
                 else if (nextKeyAppMs >= 0)
                 {
@@ -1414,7 +1418,7 @@ internal sealed partial class MainForm
                         _losslessVideoRangeCache[key] = null;
                         return null;
                     }
-                    videoStartMs = minAppMs - videoFirstAppMs - 2;
+                    videoStartMs = minAppMs - bsfZeroAppMs - 2;
                 }
                 else
                 {
@@ -1430,7 +1434,7 @@ internal sealed partial class MainForm
                     _losslessVideoRangeCache[key] = result;
                     return result;
                 }
-                var firstExportedMs = ProbeFirstExportedVideoMs(ffprobe, videoStartMs, formatStartSec, videoFirstAbsSec);
+                var firstExportedMs = ProbeFirstExportedVideoMs(ffprobe, videoStartMs, formatStartSec, bsfZeroAbsSec);
                 var (anchorUs, anchorEndUs) = firstExportedMs >= 0
                     ? ProbeLastAnchorRangeUs(ffprobe, endMs, formatStartSec)
                     : (-1, -1);
@@ -1443,8 +1447,7 @@ internal sealed partial class MainForm
                         // 窓の終わりをアンカーの表示終了 (= 次のフレームの位置) に合わせる。
                         // 理由は AdjustLosslessVideoLengthMs の説明と同じ (アンカーの duration が
                         // 切り詰められて、編集リストの終端が前へずれるのを防ぐ)。
-                        var videoFirstAppUs = (long)Math.Round((videoFirstAbsSec - formatStartSec) * 1000000.0);
-                        length = (anchorEndUs - videoFirstAppUs) / 1000 - videoStartMs;
+                        length = (anchorEndUs - bsfZeroAppUs) / 1000 - videoStartMs;
                     }
                     else
                     {
@@ -1663,6 +1666,48 @@ internal sealed partial class MainForm
         return pict;
     }
 
+    /// <summary>
+    /// 映像の先頭のキーフレームパケットの位置 (アプリの時刻軸の µs)。無ければ -1。
+    /// </summary>
+    private long ProbeFirstKeyframeVideoUs(string ffprobe, double formatStartSec)
+    {
+        var args = new[]
+        {
+            "-select_streams", _videoStreams[0].Index.ToString(CultureInfo.InvariantCulture),
+            "-show_entries", "packet=pts_time,flags",
+            "-of", "csv=p=0",
+        };
+        foreach (var line in RunFfprobeRange(ffprobe, formatStartSec, formatStartSec + 30.0, args))
+        {
+            var parts = line.Split(',');
+            string? flags = null;
+            var ptsSec = double.NaN;
+            foreach (var part in parts)
+            {
+                var trimmed = part.Trim();
+                if (double.TryParse(trimmed, NumberStyles.Float, CultureInfo.InvariantCulture, out var value)) ptsSec = value;
+                else if (trimmed.Length > 0) flags = trimmed;
+            }
+            if (flags == null || double.IsNaN(ptsSec)) continue;
+            if (!flags.Contains('K')) continue;
+            return (long)Math.Round((ptsSec - formatStartSec) * 1000000.0);
+        }
+        return -1;
+    }
+
+    /// <summary>
+    /// trim (start_rel) の起点になる位置 (アプリの時刻軸の µs)。
+    /// 起点は ffmpeg が実際にビットストリームフィルターへ渡す先頭パケットである。
+    /// 先頭が GOP の途中から始まる素材では、それより前のパケットはパーサーが
+    /// 組み立てられず渡されないため、起点はストリームの先頭パケットではなく
+    /// 先頭のキーフレームになる。調べられなければストリームの先頭パケットの位置。
+    /// </summary>
+    private long GetLosslessBsfZeroAppUs(string ffprobe, double formatStartSec, double videoFirstAbsSec)
+    {
+        var firstKeyUs = ProbeFirstKeyframeVideoUs(ffprobe, formatStartSec);
+        return firstKeyUs >= 0 ? firstKeyUs : (long)Math.Round((videoFirstAbsSec - formatStartSec) * 1000000.0);
+    }
+
     /// <summary>映像の先頭付近にあるパケットのうち、最も早い表示時刻 (アプリの時刻軸の ms)。無ければ -1。</summary>
     private long ProbeMinVideoPacketMs(string ffprobe, double formatStartSec, double videoFirstAbsSec)
     {
@@ -1726,18 +1771,18 @@ internal sealed partial class MainForm
 
     /// <summary>
     /// trim が実際に書き出す先頭の映像パケットの位置 (アプリの時刻軸の ms)。
-    /// start_rel の起点は映像の先頭パケットなので、開始境界はその位置 + startMs になる。
+    /// start_rel の起点は ffmpeg が実際に渡す先頭パケットなので、開始境界はその位置 + startMs になる。
     /// </summary>
-    private long ProbeFirstExportedVideoMs(string ffprobe, long startMs, double formatStartSec, double videoFirstAbsSec)
+    private long ProbeFirstExportedVideoMs(string ffprobe, long startMs, double formatStartSec, double zeroAbsSec)
     {
-        var boundAbsSec = videoFirstAbsSec + startMs / 1000.0;
+        var boundAbsSec = zeroAbsSec + startMs / 1000.0;
         var args = new[]
         {
             "-select_streams", _videoStreams[0].Index.ToString(CultureInfo.InvariantCulture),
             "-show_entries", "packet=pts_time",
             "-of", "csv=p=0",
         };
-        foreach (var line in RunFfprobeRange(ffprobe, Math.Max(videoFirstAbsSec, boundAbsSec - 0.05), boundAbsSec + 1.0, args))
+        foreach (var line in RunFfprobeRange(ffprobe, Math.Max(zeroAbsSec, boundAbsSec - 0.05), boundAbsSec + 1.0, args))
         {
             if (!double.TryParse(line.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var ptsSec)) continue;
             if (ptsSec >= boundAbsSec - 0.0005)
