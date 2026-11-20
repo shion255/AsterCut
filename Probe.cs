@@ -245,6 +245,45 @@ internal static class FrameIndex
         return unique.ToArray();
     }
 
+    /// <summary>
+    /// ffprobe の packet=pts_time,dts_time,flags (csv) から、キーフレームの時刻 (マイクロ秒) を
+    /// 並べ替えて重複を取り除いた配列を作る。時刻の基準と丸めは ParsePacketTimes と同じ。
+    /// </summary>
+    public static long[] ParseKeyframeTimes(string text, long baseUs)
+    {
+        var list = new List<long>(4096);
+        if (!string.IsNullOrEmpty(text))
+        {
+            var pos = 0;
+            var len = text.Length;
+            while (pos < len)
+            {
+                var end = text.IndexOf('\n', pos);
+                if (end < 0) end = len;
+                var line = text.Substring(pos, end - pos).Trim();
+                pos = end + 1;
+                if (line.Length == 0) continue;
+                var parts = line.Split(',');
+                if (parts.Length < 3 || !parts[2].Contains('K')) continue;
+                var ok = TryParseSeconds(parts[0], out var us);
+                if (!ok && parts.Length > 1) ok = TryParseSeconds(parts[1], out us);
+                if (!ok) continue;
+                var rel = us - baseUs;
+                if (rel < -2000) continue;
+                if (rel < 0) rel = 0;
+                list.Add(rel);
+            }
+        }
+        var all = list.ToArray();
+        Array.Sort(all);
+        var unique = new List<long>(all.Length);
+        for (var i = 0; i < all.Length; i++)
+        {
+            if (unique.Count == 0 || all[i] != unique[unique.Count - 1]) unique.Add(all[i]);
+        }
+        return unique.ToArray();
+    }
+
     private static bool TryParseSeconds(string text, out long micros)
     {
         micros = 0;

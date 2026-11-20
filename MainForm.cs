@@ -130,6 +130,7 @@ internal sealed partial class MainForm : Form
 
     // フレーム時刻テーブル (フレームインデックス) の構築状態。
     private long[]? _frameTimesUs;
+    private long[]? _frameKeyTimesUs;
     private long _frameBaseUs;
     private Process? _frameIndexProcess;
     private Task<string>? _frameIndexTask;
@@ -2053,6 +2054,7 @@ internal sealed partial class MainForm : Form
             SetStatus("情報を読み込み中...");
             StopFrameIndexBuild();
             _frameTimesUs = null;
+            _frameKeyTimesUs = null;
             _inputPath = Path.GetFullPath(path);
             _inputPathBox.Text = _inputPath;
             _probe = null;
@@ -2317,6 +2319,7 @@ internal sealed partial class MainForm : Form
     {
         StopFrameIndexBuild();
         _frameTimesUs = null;
+        _frameKeyTimesUs = null;
         if (_videoStreams.Count == 0) return;
         try
         {
@@ -2337,7 +2340,7 @@ internal sealed partial class MainForm : Form
             {
                 "-v", "error",
                 "-select_streams", _videoStreams[0].Index.ToString(CultureInfo.InvariantCulture),
-                "-show_entries", "packet=pts_time,dts_time",
+                "-show_entries", "packet=pts_time,dts_time,flags",
                 "-of", "csv=p=0",
                 _inputPath,
             })
@@ -2398,6 +2401,7 @@ internal sealed partial class MainForm : Form
                 return;
             }
             _frameTimesUs = table;
+            _frameKeyTimesUs = FrameIndex.ParseKeyframeTimes(text, _frameBaseUs);
             UpdateSourceInfoPanel();
             _segmentList?.Invalidate();
             UpdateMpvTimelineOffset();
@@ -2468,6 +2472,7 @@ internal sealed partial class MainForm : Form
         ResetPreviewState();
         StopFrameIndexBuild();
         _frameTimesUs = null;
+        _frameKeyTimesUs = null;
         _frameIndexInputPath = "";
         _inputPath = "";
         _inputPathBox.Text = "";
