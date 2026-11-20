@@ -184,30 +184,12 @@ internal sealed partial class MainForm
         };
         generalPanel.Controls.Add(opusWarningCheck);
 
-        // プレビューのシーク補正 (オンにすると、シークの着地を読み戻して狙ったフレームへ合わせ直す)。
-        var seekCorrectionCheck = new CheckBox
-        {
-            Text = "プレビューのシーク位置を厳密に合わせる",
-            Location = new Point(8, 70),
-            Size = new Size(464, 26),
-            ForeColor = Theme.LabelFore,
-            BackColor = Color.Transparent,
-            Checked = _settings.PreviewSeekCorrectionEnabled,
-        };
-        generalPanel.Controls.Add(seekCorrectionCheck);
-
-        var seekCorrectionNote = Theme.MakeLabel(
-            "オンにすると、シークしたときに実際に表示されたフレームを読み戻し、狙ったフレームとずれていれば合わせ直します。TS など、シークが先のキーフレームへ行き過ぎる素材でも、表示と位置が食い違いません。その代わり、シークのたびに読み戻しと合わせ直しが入るため、プレビューの反応が重くなります。オフ (既定) では、従来どおりの軽い表示になります。",
-            8, 98, 464, 110);
-        seekCorrectionNote.ForeColor = Theme.MutedFore;
-        generalPanel.Controls.Add(seekCorrectionNote);
-
         // 仕様・使い方の日本語の表示フォント (英数字は Consolas で固定)。
-        generalPanel.Controls.Add(Theme.MakeLabel("仕様・使い方のフォント:", 8, 224, 240, 24));
+        generalPanel.Controls.Add(Theme.MakeLabel("仕様・使い方のフォント:", 8, 70, 240, 24));
 
         var japaneseFontCombo = new ThemedComboBox
         {
-            Location = new Point(76, 252),
+            Location = new Point(76, 98),
             Size = new Size(240, 28),
             DropDownStyle = ComboBoxStyle.DropDownList,
             DrawMode = DrawMode.OwnerDrawFixed,
@@ -228,7 +210,7 @@ internal sealed partial class MainForm
         var currentFontName = GetSpecFontName(_settings.SpecJapaneseFontName, "Yu Gothic");
         if (japaneseFontCombo.Items.Contains(currentFontName)) japaneseFontCombo.SelectedItem = currentFontName;
         generalPanel.Controls.Add(japaneseFontCombo);
-        generalPanel.Controls.Add(Theme.MakeLabel("日本語:", 8, 252, 64, 26));
+        generalPanel.Controls.Add(Theme.MakeLabel("日本語:", 8, 98, 64, 26));
         AlignLabelAndBox(FindLabelByText(generalPanel, "日本語:"), japaneseFontCombo, gap, true);
 
         var okButton = Theme.MakeButton("OK", 432, 460, 96, 32);
@@ -242,7 +224,6 @@ internal sealed partial class MainForm
             _settings.SuppressOpusInMp4Warning = !opusWarningCheck.Checked;
             _settings.FixedOutputDirectoryEnabled = fixedOutputCheck.Checked;
             _settings.FixedOutputDirectory = fixedOutputBox.Text.Trim().Trim('"');
-            _settings.PreviewSeekCorrectionEnabled = seekCorrectionCheck.Checked;
             UpdateOutputNameView();
             _settings.SpecJapaneseFontName = japaneseFontCombo.SelectedItem?.ToString() ?? "BIZ UDPゴシック";
             SaveSettingsFromUi();

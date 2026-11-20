@@ -790,8 +790,6 @@ internal sealed partial class MainForm
         if (!TestFrameTableReady()) return targetIndex;
         targetIndex = Math.Clamp(targetIndex, 0, _frameTimesUs!.Length - 1);
         SetPlayerPosition(GetFrameSeekTimeSpan(targetIndex));
-        // オプションがオフのときは、合わせ直しをせず従来どおりの軽い表示にする。
-        if (!_settings.PreviewSeekCorrectionEnabled) return targetIndex;
         if (_previewIsPlaying) return targetIndex;
         var landed = WaitMpvLandedFrameIndex(targetIndex);
         if (landed < 0 || landed == targetIndex) return targetIndex;
