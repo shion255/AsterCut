@@ -204,7 +204,7 @@ internal sealed partial class MainForm
         // 右クリックメニュー: コントロールの表示・非表示を切り替える。
         var popupMenu = new ContextMenuStrip
         {
-            Renderer = new ToolStripProfessionalRenderer(new AsterCutMenuColorTable()),
+            Renderer = new AsterCutMenuRenderer(),
         };
         var toggleControlsItem = new ToolStripMenuItem("コントロールを隠す") { ForeColor = Theme.MenuFore, ShortcutKeyDisplayString = "H" };
         popupMenu.Items.Add(toggleControlsItem);

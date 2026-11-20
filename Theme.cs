@@ -1,5 +1,6 @@
 using System;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
@@ -138,4 +139,31 @@ internal sealed class AsterCutMenuColorTable : ProfessionalColorTable
     public override Color ImageMarginRevealedGradientEnd => DropDown;
     public override Color SeparatorDark => Border;
     public override Color SeparatorLight => Color.FromArgb(80, 74, 98);
+}
+
+/// <summary>メニューのレンダラー。チェックは標準の太い字形ではなく、細い ✓ を描く。</summary>
+internal sealed class AsterCutMenuRenderer : ToolStripProfessionalRenderer
+{
+    public AsterCutMenuRenderer() : base(new AsterCutMenuColorTable()) { }
+
+    protected override void OnRenderItemCheck(ToolStripItemImageRenderEventArgs e)
+    {
+        var rect = e.ImageRectangle;
+        if (rect.Width <= 0 || rect.Height <= 0) return;
+        var g = e.Graphics;
+        var previousMode = g.SmoothingMode;
+        g.SmoothingMode = SmoothingMode.AntiAlias;
+        var cx = rect.Left + rect.Width / 2f;
+        var cy = rect.Top + rect.Height / 2f;
+        using (var pen = new Pen(e.Item.ForeColor, 2.3f) { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round })
+        {
+            g.DrawLines(pen, new[]
+            {
+                new PointF(cx - 4.5f, cy + 0.5f),
+                new PointF(cx - 1.3f, cy + 3.7f),
+                new PointF(cx + 4.8f, cy - 3.9f),
+            });
+        }
+        g.SmoothingMode = previousMode;
+    }
 }

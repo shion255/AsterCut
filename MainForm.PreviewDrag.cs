@@ -33,6 +33,9 @@ internal sealed partial class MainForm
     private Point _previewPointerDownPos;
     private Point _previewFormStartPos;
     private bool _previewButtonWasDown;
+    private bool _previewRightButtonWasDown;
+    private ContextMenuStrip? _previewContextMenu;
+    private ToolStripMenuItem? _previewSeekCorrectionMenuItem;
     private bool _previewPressMayDrag;
     private long _previewLastClickTicks;
     private Point _previewLastClickPos;
@@ -222,6 +225,7 @@ internal sealed partial class MainForm
     {
         UpdatePreviewSpaceKey();
         UpdatePreviewArrowKeys();
+        UpdatePreviewRightClick();
         var buttons = Control.MouseButtons;
         var pos = Control.MousePosition;
         var leftDown = (buttons & MouseButtons.Left) != 0;
@@ -286,6 +290,50 @@ internal sealed partial class MainForm
                 _previewFormStartPos.X + (pos.X - _previewPointerDownPos.X),
                 _previewFormStartPos.Y + (pos.Y - _previewPointerDownPos.Y));
         }
+    }
+
+    /// <summary>
+    /// プレビュー画面の右クリックをポーリングで拾い、メニューを表示する。
+    /// 映像は mpv の子ウィンドウ (別プロセス) のため、通常のマウスイベントでは受け取れない。
+    /// </summary>
+    private void UpdatePreviewRightClick()
+    {
+        var rightDown = (Control.MouseButtons & MouseButtons.Right) != 0;
+        var pressed = rightDown && !_previewRightButtonWasDown;
+        _previewRightButtonWasDown = rightDown;
+        if (!pressed) return;
+        if (Form.ActiveForm != this) return;
+        if (!TestPreviewPointerGeometry()) return;
+        ShowPreviewContextMenu();
+    }
+
+    /// <summary>
+    /// プレビュー画面の右クリックメニュー。項目はシーク補正の有効 / 無効の切り替えだけ。
+    /// </summary>
+    private void ShowPreviewContextMenu()
+    {
+        if (_previewContextMenu == null)
+        {
+            _previewContextMenu = new ContextMenuStrip
+            {
+                Renderer = new AsterCutMenuRenderer(),
+            };
+            _previewSeekCorrectionMenuItem = new ToolStripMenuItem("プレビューのシーク位置を厳密に合わせる") { ForeColor = Theme.MenuFore };
+            _previewSeekCorrectionMenuItem.Click += (_, _) =>
+            {
+                _settings.PreviewSeekCorrectionEnabled = !_settings.PreviewSeekCorrectionEnabled;
+                SaveSettingsFromUi();
+            };
+            _previewContextMenu.Items.Add(_previewSeekCorrectionMenuItem);
+            _previewContextMenu.Opening += (_, _) =>
+            {
+                if (_previewSeekCorrectionMenuItem != null)
+                {
+                    _previewSeekCorrectionMenuItem.Checked = _settings.PreviewSeekCorrectionEnabled;
+                }
+            };
+        }
+        _previewContextMenu.Show(Control.MousePosition);
     }
 
     /// <summary>
