@@ -15,6 +15,7 @@ internal sealed class ProbeStream
     public int Index { get; set; }
     public string CodecType { get; set; } = "";
     public string CodecName { get; set; } = "";
+    public string CodecTag { get; set; } = "";
     public string CodecLongName { get; set; } = "";
     public string Profile { get; set; } = "";
     public string TimeBase { get; set; } = "";
@@ -112,6 +113,7 @@ internal static class Probe
                     Index = GetInt(element, "index"),
                     CodecType = GetText(element, "codec_type"),
                     CodecName = GetText(element, "codec_name"),
+                    CodecTag = GetText(element, "codec_tag"),
                     CodecLongName = GetText(element, "codec_long_name"),
                     Profile = GetText(element, "profile"),
                     TimeBase = GetText(element, "time_base"),
