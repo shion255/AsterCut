@@ -6,6 +6,7 @@ using System.IO;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
@@ -282,14 +283,38 @@ internal sealed partial class MainForm
         SaveSettingsFromUi();
     }
 
-    /// <summary>保存日時を除き、履歴の内容 (入力・出力先・編集状態) が全く同じかどうかを返す。</summary>
+    // 重複判定で比べない編集状態の項目。出力の方法や出力ファイルにだけ関わるもので、
+    // 編集内容でもエンコード設定でもないため、これらだけが違う履歴は重複として扱う。
+    private static readonly string[] HistoryOutputOnlyStateFields =
+    {
+        "OutputModeIndex",
+        "OutputModeUserSelected",
+        "OutputPathText",
+        "OutputPathIsCustom",
+        "SplitOutputDirText",
+        "SplitOutputDirIsCustom",
+        "AppendTimestamp",
+        "AppendSuffix",
+        "KeepMetadata",
+        "WriteEditorMetadata",
+        "KeepDataBroadcast",
+    };
+
+    /// <summary>保存日時を除き、履歴の内容 (入力・出力先・編集状態) が同じかどうかを返す。出力の方法だけが違うものは同じとみなす。</summary>
     private static bool IsSameHistoryContent(EditHistoryEntry a, EditHistoryEntry b)
     {
         if (!string.Equals(a.InputPath, b.InputPath, StringComparison.OrdinalIgnoreCase)) return false;
         if (!string.Equals(a.OutputPath, b.OutputPath, StringComparison.OrdinalIgnoreCase)) return false;
-        var aJson = a.State == null ? "" : JsonSerializer.Serialize(a.State);
-        var bJson = b.State == null ? "" : JsonSerializer.Serialize(b.State);
-        return string.Equals(aJson, bJson, StringComparison.Ordinal);
+        return string.Equals(GetHistoryComparisonJson(a.State), GetHistoryComparisonJson(b.State), StringComparison.Ordinal);
+    }
+
+    /// <summary>重複判定用に、出力の方法だけに関わる項目を取り除いて編集状態を JSON 化する。</summary>
+    private static string GetHistoryComparisonJson(EditState? state)
+    {
+        if (state == null) return "";
+        if (JsonSerializer.SerializeToNode(state) is not JsonObject node) return "";
+        foreach (var field in HistoryOutputOnlyStateFields) node.Remove(field);
+        return node.ToJsonString();
     }
 
     // ------------------------------------------------------------------
