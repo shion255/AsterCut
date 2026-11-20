@@ -35,6 +35,9 @@ internal sealed partial class MainForm
     // フレーム移動から待ち受けたときの移動元フレームと方向 (表示が動かなかったときの予備動作の判定用。方向 0 はフレーム移動以外)。
     private int _previewSnapStepFromIndex = -1;
     private int _previewSnapStepDirection = 0;
+    // 予備動作で最後に試したキーフレームと、その試行回数。
+    private int _previewSnapEscapeIndex = -1;
+    private int _previewSnapEscapeCount = 0;
     private DateTime _previewWarmupUntil = DateTime.MinValue;
     private long _previewDurationMs;
     private bool _previewSeeking;
@@ -1068,10 +1071,15 @@ internal sealed partial class MainForm
 
     // シークのあと、実際に表示されたフレームへ位置を合わせるための待ち受けを登録する。
     // 合わせ直すためのシークはせず、mpv の着地を読み戻して表示と位置をそちらへ合わせる。
-    private void ArmPreviewLandingSnap(int targetIndex, int stepFromIndex = -1, int stepDirection = 0)
+    private void ArmPreviewLandingSnap(int targetIndex, int stepFromIndex = -1, int stepDirection = 0, bool keepStepContext = false)
     {
-        _previewSnapStepFromIndex = stepFromIndex;
-        _previewSnapStepDirection = stepDirection;
+        if (!keepStepContext)
+        {
+            _previewSnapStepFromIndex = stepFromIndex;
+            _previewSnapStepDirection = stepDirection;
+            _previewSnapEscapeIndex = -1;
+            _previewSnapEscapeCount = 0;
+        }
         if (!TestFrameTableReady() || targetIndex < 0)
         {
             _previewSnapTargetIndex = -1;
@@ -1128,27 +1136,40 @@ internal sealed partial class MainForm
             _previewSnapTargetIndex = -1;
             var stepFromIndex = _previewSnapStepFromIndex;
             var stepDirection = _previewSnapStepDirection;
-            _previewSnapStepFromIndex = -1;
-            _previewSnapStepDirection = 0;
-            if (landedIndex == targetIndex) return;
+            if (landedIndex == targetIndex)
+            {
+                _previewSnapStepFromIndex = -1;
+                _previewSnapStepDirection = 0;
+                _previewSnapEscapeIndex = -1;
+                _previewSnapEscapeCount = 0;
+                return;
+            }
             // フレーム移動で表示が動かなかった (着地が移動元と同じか、移動と逆側) ときは、
-            // 表示できる前後のキーフレームへ 1 回だけ移動する。
+            // 表示できる前後のキーフレームへ移動する。キーフレームへのシーク自体が行き過ぎて
+            // 着地が動かないこともあるため、着地が動くまで 1 つずつ先のキーフレームを試す。
             if (stepFromIndex >= 0 && stepDirection != 0 &&
                 ((stepDirection < 0 && landedIndex >= stepFromIndex) || (stepDirection > 0 && landedIndex <= stepFromIndex)))
             {
-                var keyIndex = stepDirection < 0 ? FindPreviousKeyframeIndex(stepFromIndex) : FindNextKeyframeIndex(stepFromIndex);
-                if (keyIndex >= 0)
+                var baseIndex = _previewSnapEscapeIndex >= 0 ? _previewSnapEscapeIndex : stepFromIndex;
+                var keyIndex = stepDirection < 0 ? FindPreviousKeyframeIndex(baseIndex) : FindNextKeyframeIndex(baseIndex);
+                if (keyIndex >= 0 && _previewSnapEscapeCount < 6)
                 {
+                    _previewSnapEscapeIndex = keyIndex;
+                    _previewSnapEscapeCount++;
                     var keyMs = GetFrameFloorMs(keyIndex);
                     _previewLogicalPositionMs = keyMs;
                     _previewPendingSeekMs = keyMs;
                     SetPlayerPosition(GetFrameSeekTimeSpan(keyIndex));
                     UpdatePreviewSeekBarValues(keyMs);
                     WriteLog($"フレーム移動で表示が動かなかったため、{(stepDirection < 0 ? "前の" : "次の")}キーフレームへ移動しました ({stepFromIndex}f → {keyIndex}f)。");
-                    ArmPreviewLandingSnap(keyIndex);
+                    ArmPreviewLandingSnap(keyIndex, keepStepContext: true);
                     return;
                 }
             }
+            _previewSnapStepFromIndex = -1;
+            _previewSnapStepDirection = 0;
+            _previewSnapEscapeIndex = -1;
+            _previewSnapEscapeCount = 0;
             var landedMs = GetFrameFloorMs(landedIndex);
             _previewLogicalPositionMs = landedMs;
             _previewPendingSeekMs = landedMs;
