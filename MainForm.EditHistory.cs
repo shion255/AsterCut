@@ -351,7 +351,6 @@ internal sealed partial class MainForm
         ApplyEditState(entry.State);
         WriteLog($"{logLabel}: 保存日時={entry.SavedAt}; 入力={entry.InputPath}; 出力={entry.OutputPath}");
         SetStatus("編集履歴を復元しました");
-        _tabs.SelectedTab = _cutTab;
     }
 
     private void ShowEditHistoryDialog()
