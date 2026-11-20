@@ -848,6 +848,7 @@ internal sealed partial class MainForm
     private void TogglePreviewPlayback()
     {
         if (!_previewReady || !TestPlayerAvailable()) return;
+        RestoreStepAudio();
         try
         {
             if (_previewIsPlaying)
@@ -957,6 +958,42 @@ internal sealed partial class MainForm
         _frameStepRepeatTimer = null!;
     }
 
+    // フレームステップ中だけ mpv の mute を使うための状態 (利用者の音量ミュートとは別)。
+    private bool _stepAudioSuppressed;
+    private System.Windows.Forms.Timer? _stepAudioRestoreTimer;
+
+    /// <summary>
+    /// 一時停止中のフレーム移動で、ステップしたフレームの音が一瞬出ないようにする。
+    /// mpv のフレームステップは 1 フレーム分だけ再生するため、その間だけ mute をかけ、
+    /// 最後のステップから少し置いて戻す。
+    /// </summary>
+    private void SuppressAudioForStep()
+    {
+        if (!_stepAudioSuppressed)
+        {
+            _stepAudioSuppressed = true;
+            SendMpvCommand(new object[] { "set_property", "mute", true });
+        }
+        if (_stepAudioRestoreTimer == null)
+        {
+            _stepAudioRestoreTimer = new System.Windows.Forms.Timer { Interval = 500 };
+            _stepAudioRestoreTimer.Tick += (_, _) =>
+            {
+                _stepAudioRestoreTimer?.Stop();
+                RestoreStepAudio();
+            };
+        }
+        _stepAudioRestoreTimer.Stop();
+        _stepAudioRestoreTimer.Start();
+    }
+
+    private void RestoreStepAudio()
+    {
+        if (!_stepAudioSuppressed) return;
+        _stepAudioSuppressed = false;
+        SendMpvCommand(new object[] { "set_property", "mute", false });
+    }
+
     private void MovePreviewFrame(int direction)
     {
         if (!_previewReady || !TestPlayerAvailable()) return;
@@ -1045,6 +1082,7 @@ internal sealed partial class MainForm
             if (useTable)
             {
                 var finalIndex = newIndex;
+                if (!wasPlaying && !wasAtEnd) SuppressAudioForStep();
                 if (!wasPlaying && !wasAtEnd && direction > 0)
                 {
                     // 進む方向は mpv 本来のフレームステップで即座に動かす (シークも補正もしない)。
