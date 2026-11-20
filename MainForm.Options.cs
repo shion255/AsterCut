@@ -7,7 +7,7 @@ namespace AsterCut;
 internal sealed partial class MainForm
 {
     // ------------------------------------------------------------------
-    // オプション画面 (パス設定とウィンドウサイズの記憶)
+    // オプション画面 (左の項目一覧で「全般」と「パス」を切り替える)
     // ------------------------------------------------------------------
 
     private void ShowOptionsDialog()
@@ -23,7 +23,7 @@ internal sealed partial class MainForm
             Icon = AppIcon.Value,
             Text = "オプション",
             StartPosition = FormStartPosition.CenterParent,
-            ClientSize = new Size(600, 414),
+            ClientSize = new Size(640, 500),
             FormBorderStyle = FormBorderStyle.FixedDialog,
             MaximizeBox = false,
             MinimizeBox = false,
@@ -34,13 +34,66 @@ internal sealed partial class MainForm
             AutoScaleMode = AutoScaleMode.None,
         };
 
-        TextBox MakePathRow(string labelText, int y, string value, string fileName)
+        var generalPanel = new Panel
         {
-            dialog.Controls.Add(Theme.MakeLabel(labelText, 12, y, 72, 26));
-            var box = Theme.MakeTextBox(88, y, 398);
+            Location = new Point(140, 12),
+            Size = new Size(488, 436),
+            BackColor = Theme.PageBack,
+        };
+        var pathPanel = new Panel
+        {
+            Location = new Point(140, 12),
+            Size = new Size(488, 436),
+            BackColor = Theme.PageBack,
+            Visible = false,
+        };
+        dialog.Controls.Add(generalPanel);
+        dialog.Controls.Add(pathPanel);
+
+        var categoryList = new ListBox
+        {
+            Location = new Point(12, 12),
+            Size = new Size(116, 436),
+            DrawMode = DrawMode.OwnerDrawFixed,
+            ItemHeight = 30,
+            BorderStyle = BorderStyle.FixedSingle,
+            BackColor = Theme.PanelBack,
+            ForeColor = Theme.LabelFore,
+            Font = Font,
+        };
+        categoryList.Items.Add("全般");
+        categoryList.Items.Add("パス");
+        categoryList.DrawItem += (_, e) =>
+        {
+            if (e.Index < 0 || e.Index >= categoryList.Items.Count) return;
+            var selected = (e.State & DrawItemState.Selected) != 0;
+            using (var brush = new SolidBrush(selected ? Theme.Accent : Theme.PanelBack))
+            {
+                e.Graphics.FillRectangle(brush, e.Bounds);
+            }
+            TextRenderer.DrawText(e.Graphics, categoryList.Items[e.Index]?.ToString() ?? "", categoryList.Font,
+                new Rectangle(e.Bounds.Left + 10, e.Bounds.Top, e.Bounds.Width - 10, e.Bounds.Height),
+                selected ? Color.White : Theme.LabelFore,
+                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine);
+        };
+        categoryList.SelectedIndexChanged += (_, _) =>
+        {
+            var showGeneral = categoryList.SelectedIndex <= 0;
+            generalPanel.Visible = showGeneral;
+            pathPanel.Visible = !showGeneral;
+        };
+        dialog.Controls.Add(categoryList);
+        categoryList.SelectedIndex = 0;
+
+        // ---------------- 「パス」 ----------------
+
+        TextBox MakePathRow(Control parent, string labelText, int y, string value, string fileName)
+        {
+            parent.Controls.Add(Theme.MakeLabel(labelText, 8, y, 64, 26));
+            var box = Theme.MakeTextBox(76, y, 318);
             box.Text = value;
-            dialog.Controls.Add(box);
-            var browse = Theme.MakeButton("参照...", 494, y - 1, 94, 28);
+            parent.Controls.Add(box);
+            var browse = Theme.MakeButton("参照...", 402, y - 1, 84, 28);
             browse.Click += (_, _) =>
             {
                 using var picker = new OpenFileDialog
@@ -51,63 +104,41 @@ internal sealed partial class MainForm
                 };
                 if (picker.ShowDialog(dialog) == DialogResult.OK) box.Text = picker.FileName;
             };
-            dialog.Controls.Add(browse);
+            parent.Controls.Add(browse);
             return box;
         }
 
-        var ffmpegBox = MakePathRow("ffmpeg:", 18, _ffmpegPath, "ffmpeg.exe");
-        var ffprobeBox = MakePathRow("ffprobe:", 58, _ffprobePath, "ffprobe.exe");
-        var mpvBox = MakePathRow("mpv:", 98, _mpvPath, "mpv.exe");
+        var ffmpegBox = MakePathRow(pathPanel, "ffmpeg:", 14, _ffmpegPath, "ffmpeg.exe");
+        var ffprobeBox = MakePathRow(pathPanel, "ffprobe:", 54, _ffprobePath, "ffprobe.exe");
+        var mpvBox = MakePathRow(pathPanel, "mpv:", 94, _mpvPath, "mpv.exe");
 
         // ラベルと入力欄の間隔は、本体の基準 (画質 (crf): の行) にそろえる。
         var gap = GetLabelBoxGap();
-        AlignLabelAndBox(FindLabelByText(dialog, "ffmpeg:"), ffmpegBox, gap, true);
-        AlignLabelAndBox(FindLabelByText(dialog, "ffprobe:"), ffprobeBox, gap, true);
-        AlignLabelAndBox(FindLabelByText(dialog, "mpv:"), mpvBox, gap, true);
+        AlignLabelAndBox(FindLabelByText(pathPanel, "ffmpeg:"), ffmpegBox, gap, true);
+        AlignLabelAndBox(FindLabelByText(pathPanel, "ffprobe:"), ffprobeBox, gap, true);
+        AlignLabelAndBox(FindLabelByText(pathPanel, "mpv:"), mpvBox, gap, true);
 
-        var trimLabel = Theme.MakeLabel(_trimStatusText, 12, 138, 576, 24);
+        var trimLabel = Theme.MakeLabel(_trimStatusText, 8, 134, 472, 24);
         trimLabel.ForeColor = _trimStatusColor;
-        dialog.Controls.Add(trimLabel);
-
-        var rememberSizeCheck = new CheckBox
-        {
-            Text = "ウィンドウサイズを記憶する",
-            Location = new Point(12, 170),
-            Size = new Size(300, 26),
-            ForeColor = Theme.LabelFore,
-            BackColor = Color.Transparent,
-            Checked = _settings.RememberWindowSize,
-        };
-        dialog.Controls.Add(rememberSizeCheck);
-
-        var opusWarningCheck = new CheckBox
-        {
-            Text = "Opus in MP4 の確認ポップアップを表示する",
-            Location = new Point(12, 198),
-            Size = new Size(470, 26),
-            ForeColor = Theme.LabelFore,
-            BackColor = Color.Transparent,
-            Checked = !_settings.SuppressOpusInMp4Warning,
-        };
-        dialog.Controls.Add(opusWarningCheck);
+        pathPanel.Controls.Add(trimLabel);
 
         // 出力先フォルダーの固定 (有効な間は、読み込み時の出力先の初期値が固定フォルダーになる)。
         var fixedOutputCheck = new CheckBox
         {
             Text = "出力先フォルダーを固定する",
-            Location = new Point(12, 226),
+            Location = new Point(8, 166),
             Size = new Size(300, 26),
             ForeColor = Theme.LabelFore,
             BackColor = Color.Transparent,
             Checked = _settings.FixedOutputDirectoryEnabled,
         };
-        dialog.Controls.Add(fixedOutputCheck);
+        pathPanel.Controls.Add(fixedOutputCheck);
 
-        dialog.Controls.Add(Theme.MakeLabel("フォルダー:", 12, 254, 72, 26));
-        var fixedOutputBox = Theme.MakeTextBox(88, 254, 398);
+        pathPanel.Controls.Add(Theme.MakeLabel("フォルダー:", 8, 194, 64, 26));
+        var fixedOutputBox = Theme.MakeTextBox(76, 194, 318);
         fixedOutputBox.Text = _settings.FixedOutputDirectory;
-        dialog.Controls.Add(fixedOutputBox);
-        var fixedOutputBrowse = Theme.MakeButton("参照...", 494, 253, 94, 28);
+        pathPanel.Controls.Add(fixedOutputBox);
+        var fixedOutputBrowse = Theme.MakeButton("参照...", 402, 193, 84, 28);
         fixedOutputBrowse.Click += (_, _) =>
         {
             using var picker = new FolderBrowserDialog
@@ -119,8 +150,8 @@ internal sealed partial class MainForm
             if (current.Length > 0 && System.IO.Directory.Exists(current)) picker.SelectedPath = current;
             if (picker.ShowDialog(dialog) == DialogResult.OK) fixedOutputBox.Text = picker.SelectedPath;
         };
-        dialog.Controls.Add(fixedOutputBrowse);
-        AlignLabelAndBox(FindLabelByText(dialog, "フォルダー:"), fixedOutputBox, gap, true);
+        pathPanel.Controls.Add(fixedOutputBrowse);
+        AlignLabelAndBox(FindLabelByText(pathPanel, "フォルダー:"), fixedOutputBox, gap, true);
         void UpdateFixedOutputEnabled()
         {
             fixedOutputBox.Enabled = fixedOutputCheck.Checked;
@@ -129,12 +160,54 @@ internal sealed partial class MainForm
         fixedOutputCheck.CheckedChanged += (_, _) => UpdateFixedOutputEnabled();
         UpdateFixedOutputEnabled();
 
+        // ---------------- 「全般」 ----------------
+
+        var rememberSizeCheck = new CheckBox
+        {
+            Text = "ウィンドウサイズを記憶する",
+            Location = new Point(8, 14),
+            Size = new Size(300, 26),
+            ForeColor = Theme.LabelFore,
+            BackColor = Color.Transparent,
+            Checked = _settings.RememberWindowSize,
+        };
+        generalPanel.Controls.Add(rememberSizeCheck);
+
+        var opusWarningCheck = new CheckBox
+        {
+            Text = "Opus in MP4 の確認ポップアップを表示する",
+            Location = new Point(8, 42),
+            Size = new Size(464, 26),
+            ForeColor = Theme.LabelFore,
+            BackColor = Color.Transparent,
+            Checked = !_settings.SuppressOpusInMp4Warning,
+        };
+        generalPanel.Controls.Add(opusWarningCheck);
+
+        // プレビューのシーク補正 (オンにすると、シークの着地を読み戻して狙ったフレームへ合わせ直す)。
+        var seekCorrectionCheck = new CheckBox
+        {
+            Text = "プレビューのシーク位置を厳密に合わせる",
+            Location = new Point(8, 70),
+            Size = new Size(464, 26),
+            ForeColor = Theme.LabelFore,
+            BackColor = Color.Transparent,
+            Checked = _settings.PreviewSeekCorrectionEnabled,
+        };
+        generalPanel.Controls.Add(seekCorrectionCheck);
+
+        var seekCorrectionNote = Theme.MakeLabel(
+            "オンにすると、シークしたときに実際に表示されたフレームを読み戻し、狙ったフレームとずれていれば合わせ直します。TS など、シークが先のキーフレームへ行き過ぎる素材でも、表示と位置が食い違いません。その代わり、シークのたびに読み戻しと合わせ直しが入るため、プレビューの反応が重くなります。オフ (既定) では、従来どおりの軽い表示になります。",
+            8, 98, 464, 110);
+        seekCorrectionNote.ForeColor = Theme.MutedFore;
+        generalPanel.Controls.Add(seekCorrectionNote);
+
         // 仕様・使い方の日本語の表示フォント (英数字は Consolas で固定)。
-        dialog.Controls.Add(Theme.MakeLabel("仕様・使い方のフォント:", 12, 306, 240, 24));
+        generalPanel.Controls.Add(Theme.MakeLabel("仕様・使い方のフォント:", 8, 224, 240, 24));
 
         var japaneseFontCombo = new ThemedComboBox
         {
-            Location = new Point(88, 334),
+            Location = new Point(76, 252),
             Size = new Size(240, 28),
             DropDownStyle = ComboBoxStyle.DropDownList,
             DrawMode = DrawMode.OwnerDrawFixed,
@@ -154,11 +227,11 @@ internal sealed partial class MainForm
         // 設定のフォント名は、インストール済みフォントの正式な名前へ解決してから選ぶ (存在しない名前を一覧へ足さない)。
         var currentFontName = GetSpecFontName(_settings.SpecJapaneseFontName, "Yu Gothic");
         if (japaneseFontCombo.Items.Contains(currentFontName)) japaneseFontCombo.SelectedItem = currentFontName;
-        dialog.Controls.Add(japaneseFontCombo);
-        dialog.Controls.Add(Theme.MakeLabel("日本語:", 12, 334, 72, 26));
-        AlignLabelAndBox(FindLabelByText(dialog, "日本語:"), japaneseFontCombo, gap, true);
+        generalPanel.Controls.Add(japaneseFontCombo);
+        generalPanel.Controls.Add(Theme.MakeLabel("日本語:", 8, 252, 64, 26));
+        AlignLabelAndBox(FindLabelByText(generalPanel, "日本語:"), japaneseFontCombo, gap, true);
 
-        var okButton = Theme.MakeButton("OK", 392, 368, 96, 32);
+        var okButton = Theme.MakeButton("OK", 432, 460, 96, 32);
         okButton.DialogResult = DialogResult.OK;
         okButton.Click += (_, _) =>
         {
@@ -169,6 +242,7 @@ internal sealed partial class MainForm
             _settings.SuppressOpusInMp4Warning = !opusWarningCheck.Checked;
             _settings.FixedOutputDirectoryEnabled = fixedOutputCheck.Checked;
             _settings.FixedOutputDirectory = fixedOutputBox.Text.Trim().Trim('"');
+            _settings.PreviewSeekCorrectionEnabled = seekCorrectionCheck.Checked;
             UpdateOutputNameView();
             _settings.SpecJapaneseFontName = japaneseFontCombo.SelectedItem?.ToString() ?? "BIZ UDPゴシック";
             SaveSettingsFromUi();
@@ -176,7 +250,7 @@ internal sealed partial class MainForm
             _ = CheckTrimSupportAsync();
         };
         dialog.Controls.Add(okButton);
-        var cancelButton = Theme.MakeButton("キャンセル", 496, 368, 96, 32);
+        var cancelButton = Theme.MakeButton("キャンセル", 536, 460, 96, 32);
         cancelButton.DialogResult = DialogResult.Cancel;
         dialog.Controls.Add(cancelButton);
         dialog.AcceptButton = okButton;
