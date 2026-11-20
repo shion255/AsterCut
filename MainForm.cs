@@ -396,6 +396,7 @@ internal sealed partial class MainForm : Form
             ForeColor = Theme.BoxFore,
             Text = "—",
         };
+        Theme.ApplyDarkScrollBars(_sourceMetadataTextBox);
         _sourceInfoGroup.Controls.Add(_sourceMetadataTextBox);
         _sourceTab.Controls.Add(_sourceInfoGroup);
 
@@ -2218,6 +2219,7 @@ internal sealed partial class MainForm : Form
             ForeColor = Theme.BoxFore,
             Text = _sourceMetadataTextBox.Text,
         };
+        Theme.ApplyDarkScrollBars(textBox);
         dialog.Controls.Add(textBox);
         var closeButton = Theme.MakeButton("閉じる", clientWidth - 132, clientHeight - 44, 120, 32);
         closeButton.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
