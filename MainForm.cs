@@ -171,7 +171,10 @@ internal sealed partial class MainForm : Form
         // Dock するパネルは、子を入れる前に幅を明示する。幅が初期値 (200) のままだと、
         // 右端に固定した子の距離がその幅で記録され、表示時に画面の外へずれてしまう。
         // (デザイナーが生成するコードは、Dock でも必ず Size を書く)
-        var initialClientWidth = ClientSize.Width > 0 ? ClientSize.Width : 1104;
+        // 幅は復元したウィンドウ幅ではなく、設計時のクライアント幅 (1104) に固定する。
+        // 子のアンカー距離はこの幅を基準に記録されるため、復元幅を基準にすると、
+        // 復元時より窓を狭くしたときにその分だけ入力動画の欄が縮んで消えてしまう。
+        var initialClientWidth = 1104;
 
         // ログ欄はタブの構築中 (プロファイルの準備など) から WriteLog で使われるため、先に作っておく。
         _logTextBox = MakeLogTextBox();
