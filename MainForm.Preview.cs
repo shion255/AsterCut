@@ -394,6 +394,7 @@ internal sealed partial class MainForm
             "--no-terminal", "--really-quiet",
             "--input-default-bindings=no", "--input-vo-keyboard=no", "--input-cursor=no",
             "--osc=no", "--osd-level=0", "--hr-seek=yes", "--audio-display=no", "--sub-auto=no",
+            "--hwdec=auto-safe",
         })
         {
             startInfo.ArgumentList.Add(option);
@@ -640,14 +641,16 @@ internal sealed partial class MainForm
     }
 
     /// <summary>
-    /// 再生位置ラベルの末尾に付ける、フレームレートと総フレーム数の文字列。
-    /// 総フレーム数は、フレーム表ができているときだけ付ける。
+    /// 再生位置ラベルの末尾に付ける、フレーム番号の文字列。
+    /// フレーム表ができているときだけ、現在位置のフレーム番号と総フレーム数を付ける。
     /// </summary>
-    private string GetPreviewFrameInfoText()
+    private string GetPreviewFrameInfoText(long positionMs)
     {
-        var text = $"(約 {Math.Round(_previewFrameRate, 3)} fps";
-        if (TestFrameTableReady()) text += $" / {_frameTimesUs!.Length}f";
-        return text + ")";
+        if (!TestFrameTableReady()) return "";
+        // ミリ秒への切り捨てで 1 つ前のフレームにならないよう、フレーム移動の現在位置と同じ余裕を持たせる。
+        var frameIndex = FindFrameIndexAtOrBefore(positionMs * 1000L + 999L);
+        if (frameIndex < 0) frameIndex = 0;
+        return $"({frameIndex}f / {_frameTimesUs!.Length}f)";
     }
 
     private long GetFrameFloorMs(int index)
@@ -1183,7 +1186,8 @@ internal sealed partial class MainForm
         // 先頭フレーム以下は、ファイルの先頭 (0) として表示する (シーク確定時と同じ扱い)。
         if (TestFrameTableReady() && FindFrameIndexAtOrBefore(targetMs * 1000L) <= 0) targetMs = 0;
         _previewLogicalPositionMs = targetMs;
-        var labelText = $"再生位置: {TimeText.FormatClockFromMs(targetMs)} / {TimeText.FormatClockFromMs(durationMs)}  {GetPreviewFrameInfoText()}";
+        var frameInfo = GetPreviewFrameInfoText(targetMs);
+        var labelText = $"{TimeText.FormatClockFromMs(targetMs)} / {TimeText.FormatClockFromMs(durationMs)}" + (frameInfo.Length > 0 ? $"  {frameInfo}" : "");
         _previewPositionLabel.Text = labelText;
         if (_popupPositionLabel != null) _popupPositionLabel.Text = labelText;
         if (_clipPositionLabel != null) _clipPositionLabel.Text = labelText;
@@ -1421,7 +1425,8 @@ internal sealed partial class MainForm
                 if (durationMs > 0) positionMs = Math.Min(durationMs, positionMs);
             }
             var durationText = durationMs > 0 ? TimeText.FormatClockFromMs(durationMs) : "--:--:--.---";
-            var labelText = $"再生位置: {TimeText.FormatClockFromMs(positionMs)} / {durationText}  {GetPreviewFrameInfoText()}";
+            var frameInfo = GetPreviewFrameInfoText(positionMs);
+            var labelText = $"{TimeText.FormatClockFromMs(positionMs)} / {durationText}" + (frameInfo.Length > 0 ? $"  {frameInfo}" : "");
             _previewPositionLabel.Text = labelText;
             if (_popupPositionLabel != null) _popupPositionLabel.Text = labelText;
             if (_clipPositionLabel != null) _clipPositionLabel.Text = labelText;
@@ -1520,6 +1525,6 @@ internal sealed partial class MainForm
         _clipPreviewSeeking = false;
         UpdatePreviewPlaybackButtons();
         if (_seekTrackBar != null) { try { _seekTrackBar.Value = 0; } catch { } }
-        if (_previewPositionLabel != null) _previewPositionLabel.Text = "再生位置: --:--:--.--- / --:--:--.---";
+        if (_previewPositionLabel != null) _previewPositionLabel.Text = "--:--:--.--- / --:--:--.---";
     }
 }

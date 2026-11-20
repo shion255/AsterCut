@@ -70,6 +70,7 @@ internal sealed partial class MainForm : Form
     private readonly Panel _segmentGroup;
     private Label _segmentTitleLabel = null!;
     private readonly Dictionary<Control, Rectangle> _previewLayoutBase = new();
+    private readonly List<Control[]> _previewCenteredRows = new();
     private bool _previewLayoutReady;
     private Rectangle _mpvHostPanelHomeBounds = new(6, 15, 508, 282);
     private readonly Button _cutRemoveButton;
@@ -449,7 +450,8 @@ internal sealed partial class MainForm : Form
         };
         _mpvHostPanel.Resize += (_, _) => FitMpvWindow();
         _cutTab.Controls.Add(_mpvHostPanel);
-        _previewPositionLabel = Theme.MakeLabel("再生位置: --:--:--.--- / --:--:--.---", 14, 299, 500, 24);
+        _previewPositionLabel = Theme.MakeLabel("--:--:--.--- / --:--:--.---", 14, 299, 500, 24);
+        _previewPositionLabel.TextAlign = ContentAlignment.MiddleCenter;
         _cutTab.Controls.Add(_previewPositionLabel);
         _previewToggleButton = Theme.MakeButton("再生", 14, 357, 82, 30);
         _previewToggleButton.Click += (_, _) => TogglePreviewPlayback();
@@ -589,6 +591,9 @@ internal sealed partial class MainForm : Form
         // 変更後の速度は、回転の右隣に置く。
         speedLabel.Location = new Point(_rotationCombo.Right + 16, 434);
         _speedBox.Location = new Point(speedLabel.Left + speedTextWidth + speedLabelGap, 432);
+        // 再生時間は、プレビュー列の中央にそろえる
+        // (実際の配置は UpdatePreviewColumnLayout が行う)。
+        _previewCenteredRows.Add(new Control[] { _previewPositionLabel });
         var speedTabToolTip = new ToolTip { AutoPopDelay = 30000, InitialDelay = 300 };
         var speedHintText = string.Join(Environment.NewLine,
             "再生速度を設定します。マウスホイールと ↑ / ↓ キーで 0.05 ずつ増減でき、直接入力もできます (0.05 ～ 100.00)。",
@@ -1521,6 +1526,26 @@ internal sealed partial class MainForm : Form
             }
         }
         var extra = GetPreviewColumnExtra();
+        // 中央揃えの行は、行全体の横幅がプレビュー列の中央に来るよう、基準位置からのずらし量を求める。
+        var centeredDelta = new Dictionary<Control, int>();
+        if (_previewLayoutBase.TryGetValue(_mpvHostPanel, out var columnBase))
+        {
+            var columnWidth = columnBase.Width + extra.Width;
+            foreach (var row in _previewCenteredRows)
+            {
+                var rowLeft = int.MaxValue;
+                var rowRight = int.MinValue;
+                foreach (var control in row)
+                {
+                    if (!_previewLayoutBase.TryGetValue(control, out var b)) continue;
+                    rowLeft = Math.Min(rowLeft, b.Left);
+                    rowRight = Math.Max(rowRight, b.Right);
+                }
+                if (rowRight == int.MinValue) continue;
+                var delta = columnBase.Left + (columnWidth - (rowRight - rowLeft)) / 2 - rowLeft;
+                foreach (var control in row) centeredDelta[control] = delta;
+            }
+        }
         foreach (var page in new[] { _cutTab, _chapterTab })
         foreach (Control control in page.Controls)
         {
@@ -1537,12 +1562,13 @@ internal sealed partial class MainForm : Form
             else
             {
                 var newTop = baseBounds.Top > 297 ? baseBounds.Top + extra.Height : baseBounds.Top;
-                var newWidth = control == _seekTrackBar || control == _previewPositionLabel
+                var newWidth = control == _seekTrackBar
                     ? baseBounds.Width + extra.Width
                     : baseBounds.Width;
-                if (control.Top != newTop || control.Width != newWidth)
+                var newLeft = baseBounds.Left + (centeredDelta.TryGetValue(control, out var delta) ? delta : 0);
+                if (control.Left != newLeft || control.Top != newTop || control.Width != newWidth)
                 {
-                    control.SetBounds(baseBounds.Left, newTop, newWidth, baseBounds.Height);
+                    control.SetBounds(newLeft, newTop, newWidth, baseBounds.Height);
                 }
             }
         }
