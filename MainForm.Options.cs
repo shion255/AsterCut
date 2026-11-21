@@ -50,13 +50,21 @@ internal sealed partial class MainForm
         dialog.Controls.Add(generalPanel);
         dialog.Controls.Add(pathPanel);
 
-        var categoryList = new ListBox
+        // 枠線はテーマが描くとマウスオーバーで青く変わるため、枠線なしにして自前の枠で囲む。
+        var categoryListBorder = new Panel
         {
             Location = new Point(12, 12),
-            Size = new Size(116, 436),
+            Size = new Size(118, 438),
+            BackColor = Color.FromArgb(88, 80, 110),
+            Padding = new Padding(1),
+        };
+        var categoryList = new ListBox
+        {
+            Dock = DockStyle.Fill,
             DrawMode = DrawMode.OwnerDrawFixed,
             ItemHeight = 30,
-            BorderStyle = BorderStyle.FixedSingle,
+            IntegralHeight = false,
+            BorderStyle = BorderStyle.None,
             BackColor = Theme.PanelBack,
             ForeColor = Theme.LabelFore,
             Font = Font,
@@ -82,7 +90,8 @@ internal sealed partial class MainForm
             generalPanel.Visible = showGeneral;
             pathPanel.Visible = !showGeneral;
         };
-        dialog.Controls.Add(categoryList);
+        categoryListBorder.Controls.Add(categoryList);
+        dialog.Controls.Add(categoryListBorder);
         categoryList.SelectedIndex = 0;
 
         // ---------------- 「パス」 ----------------
