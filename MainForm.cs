@@ -982,7 +982,7 @@ internal sealed partial class MainForm : Form
             // タブ一覧にフォーカスがあるときの ↑ は最初のタブ、↓ は最後のタブへの移動にする
             // (フォーム側のキー判定でも同じ移動をするが、届き方で反応が変わらないよう両方で受ける)。
             // プレビュー操作中は ↑↓ が音量なので除く。
-            if (_previewKeyboardActive || e.KeyCode is not (Keys.Up or Keys.Down)) return;
+            if (_previewKeyboardActive || !IsTabStripFocused() || e.KeyCode is not (Keys.Up or Keys.Down)) return;
             _tabs.SelectedIndex = e.KeyCode == Keys.Up ? 0 : _tabs.TabCount - 1;
             e.Handled = true;
             e.SuppressKeyPress = true;
@@ -1005,6 +1005,9 @@ internal sealed partial class MainForm : Form
                 _tabs.SelectedIndex = nextIndex;
             }
         };
+        // タブの見出し以外をクリックしたら、タブ一覧からフォーカスを外す
+        // (矢印キーでタブが切り替わり続けないようにするため)。
+        Application.AddMessageFilter(new TabStripFocusFilter(this));
         foreach (var page in new[] { _sourceTab, _cutTab, _chapterTab, _outputTab, _logTab, _specTab })
         {
             page.SizeChanged += (_, _) => UpdateTabPageLayouts();
@@ -2730,5 +2733,35 @@ internal sealed partial class MainForm : Form
         ApplyTextBoxMarginsOnce(_cutStartBox, 2, 0);
         ApplyTextBoxMarginsOnce(_cutEndBox, 2, 0);
         ApplyTextBoxMarginsOnce(_chapterStartBox, 2, 0);
+    }
+
+    /// <summary>
+    /// タブの見出し以外がクリックされたら、タブ一覧からフォーカスを外すためのフィルター。
+    /// 見出しをクリックした直後は矢印キーでタブを移動できるが、別の場所をクリックしたら
+    /// 矢印キーはクリック先の操作に使われるべきなので、タブ一覧のフォーカスを外す。
+    /// ホイールでのタブ移動 (見出しの上) には影響しない。
+    /// </summary>
+    private sealed class TabStripFocusFilter : IMessageFilter
+    {
+        private const int WmLButtonDown = 0x0201;
+        private readonly MainForm _form;
+
+        public TabStripFocusFilter(MainForm form) => _form = form;
+
+        public bool PreFilterMessage(ref Message m)
+        {
+            if (m.Msg != WmLButtonDown || _form.IsDisposed) return false;
+            var clicked = Control.FromHandle(m.HWnd);
+            if (clicked == null || clicked == _form._tabs) return false;
+            if (clicked.FindForm() != _form) return false;
+            // クリック先が自分でフォーカスを取るコントロールなら、フォーカスは自然に移る。
+            // ページの余白などフォーカスを取らない場所ではタブ一覧にフォーカスが残るため、
+            // クリックの処理が終わったあとに確認し、残っていたら外す。
+            _form.BeginInvoke(new Action(() =>
+            {
+                if (!_form.IsDisposed && _form.IsTabStripFocused()) _form.ActiveControl = null;
+            }));
+            return false;
+        }
     }
 }

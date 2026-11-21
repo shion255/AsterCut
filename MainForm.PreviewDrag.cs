@@ -122,7 +122,7 @@ internal sealed partial class MainForm
         // プレビュー操作中は ↑↓ が音量なので除く (プレビューの子ウィンドウをクリックしても
         // フォーム側のフォーカスはタブ一覧に残ることがあるため、こちらでも判定する)。
         if (!_previewKeyboardActive
-            && ActiveControl == _tabs
+            && IsTabStripFocused()
             && keyData is Keys.Up or Keys.Down)
         {
             _tabs.SelectedIndex = keyData == Keys.Up ? 0 : _tabs.TabCount - 1;
@@ -143,6 +143,17 @@ internal sealed partial class MainForm
             }
         }
         return base.ProcessCmdKey(ref msg, keyData);
+    }
+
+    /// <summary>
+    /// タブ一覧そのものにフォーカスがあるか。フォームの ActiveControl は、タブ内の
+    /// コントロールにフォーカスがあってもタブコントロールを指すため、実際の
+    /// フォーカス先 (GetFocus) で判定する。
+    /// </summary>
+    private bool IsTabStripFocused()
+    {
+        var handle = GetFocus();
+        return handle != IntPtr.Zero && Control.FromHandle(handle) == _tabs;
     }
 
     /// <summary>一覧やバーなど、矢印キーを自身の操作に使うコントロールにフォーカスがあるか。</summary>
