@@ -429,6 +429,7 @@ internal sealed partial class MainForm
         SiSection? sourcePmt = null;
         var extraEntries = new List<(int Pid, byte[] Raw)>();
         var extraPids = new HashSet<int>();
+        var dsmccPids = new HashSet<int>();
         var dataPackets = new List<(long Target, int Pid, byte[] Packet, long Pts, long Dts, long Ordinal, bool OrdinalBased)>();
         var carryState = new Dictionary<int, (bool Active, long Target, bool OrdinalBased)>();
         long packetOrdinal = 0;
@@ -466,6 +467,7 @@ internal sealed partial class MainForm
                     Array.Copy(b, e, raw, 0, raw.Length);
                     extraEntries.Add((epid, raw));
                     extraPids.Add(epid);
+                    if (type == 0x0D) dsmccPids.Add(epid);
                 }
                 e += 5 + esLen;
             }
@@ -1122,10 +1124,121 @@ internal sealed partial class MainForm
         {
             WriteLog($"字幕・データ放送などを引き継ぎました ({string.Join(" / ", dataCarried.OrderBy(p => p.Key).Select(p => $"PID 0x{p.Key:X3} {p.Value} 件"))})。");
         }
+        CheckDataBroadcastCompleteness(dataEvents, dsmccPids);
         if (dataCapped)
         {
             WriteLog("引き継ぎ対象のパケットが上限を超えたため、一部のみ引き継ぎました。");
         }
         return true;
+    }
+
+    // データ放送 (DSM-CC カルーセル) の引き継ぎが一巡ぶん揃っているかを、引き継いだ
+    // パケットの DII (モジュール一覧) と DDB (モジュールのブロック) から確かめる。
+    // データ放送は同じデータを繰り返し送る仕組みのため、短い区間では一巡ぶんが
+    // 入らないことがある。揃っていない場合だけ実行ログへ注意を出す。
+    // モジュールとブロックの対応付けは PID ごとに行う (DDB のセクションヘッダーに
+    // あるのはダウンロード ID ではなくモジュール ID のため)。
+    private void CheckDataBroadcastCompleteness(List<(long Target, int Pid, byte[] Packet, long Pts, long Dts)> dataEvents, HashSet<int> dsmccPids)
+    {
+        if (dsmccPids.Count == 0) return;
+        try
+        {
+            var modulesByPid = new Dictionary<int, Dictionary<int, (int BlockSize, long ModuleSize)>>();
+            var blocksByPid = new Dictionary<int, Dictionary<int, HashSet<int>>>();
+            var carriedPids = new HashSet<int>();
+            foreach (var pid in dsmccPids)
+            {
+                var assembler = new SiSectionAssembler();
+                foreach (var e in dataEvents)
+                {
+                    if (e.Pid != pid) continue;
+                    carriedPids.Add(pid);
+                    foreach (var section in assembler.Feed(e.Packet, 0, -1, pid))
+                    {
+                        var b = section.Bytes;
+                        if (b.Length < 26) continue;
+                        if (b[8] != 0x11 || b[9] != 0x03) continue; // DSM-CC のダウンロードメッセージのみ
+                        var messageId = (b[10] << 8) | b[11];
+                        var body = 20 + b[17]; // 適応フィールドぶんを飛ばした本体の位置
+                        if (body > b.Length) continue;
+                        if (section.TableId == 0x3B && messageId == 0x1002)
+                        {
+                            // DII: モジュール一覧を取り出す。
+                            if (body + 18 > b.Length) continue;
+                            var blockSize = (b[body + 4] << 8) | b[body + 5];
+                            if (blockSize <= 0) continue;
+                            var pos = body + 16;
+                            var compatLength = (b[pos] << 8) | b[pos + 1];
+                            pos += 2 + compatLength;
+                            if (pos + 2 > b.Length) continue;
+                            var moduleCount = (b[pos] << 8) | b[pos + 1];
+                            pos += 2;
+                            if (!modulesByPid.TryGetValue(pid, out var modules)) { modules = new Dictionary<int, (int, long)>(); modulesByPid[pid] = modules; }
+                            for (var i = 0; i < moduleCount; i++)
+                            {
+                                if (pos + 8 > b.Length) break;
+                                var moduleId = (b[pos] << 8) | b[pos + 1];
+                                var moduleSize = ((long)b[pos + 2] << 24) | ((long)b[pos + 3] << 16) | ((long)b[pos + 4] << 8) | b[pos + 5];
+                                if (!modules.ContainsKey(moduleId)) modules[moduleId] = (blockSize, moduleSize);
+                                pos += 8 + b[pos + 7];
+                                if (pos > b.Length) break;
+                            }
+                        }
+                        else if (section.TableId == 0x3C && messageId == 0x1003)
+                        {
+                            // DDB: モジュールのブロック番号を集める。
+                            if (body + 6 > b.Length) continue;
+                            var moduleId = (b[body] << 8) | b[body + 1];
+                            var blockNumber = (b[body + 4] << 8) | b[body + 5];
+                            if (!blocksByPid.TryGetValue(pid, out var pidBlocks)) { pidBlocks = new Dictionary<int, HashSet<int>>(); blocksByPid[pid] = pidBlocks; }
+                            if (!pidBlocks.TryGetValue(moduleId, out var set)) { set = new HashSet<int>(); pidBlocks[moduleId] = set; }
+                            set.Add(blockNumber);
+                        }
+                    }
+                }
+            }
+            if (carriedPids.Count == 0) return;
+            if (modulesByPid.Count == 0)
+            {
+                WriteLog("注意: データ放送の引き継ぎにモジュール一覧 (DII) が含まれておらず、内容が一巡ぶん揃っていません。受信側でデータ放送を組み立てられない場合があります。");
+                return;
+            }
+            var totalModules = 0;
+            var completeModules = 0;
+            var incomplete = false;
+            foreach (var (pid, modules) in modulesByPid)
+            {
+                blocksByPid.TryGetValue(pid, out var pidBlocks);
+                foreach (var (moduleId, info) in modules)
+                {
+                    totalModules++;
+                    var expected = info.ModuleSize == 0 ? 0 : (int)((info.ModuleSize + info.BlockSize - 1) / info.BlockSize);
+                    var have = 0;
+                    if (pidBlocks != null && pidBlocks.TryGetValue(moduleId, out var set))
+                    {
+                        foreach (var n in set) if (n < expected) have++;
+                    }
+                    if (have >= expected) completeModules++;
+                    else incomplete = true;
+                }
+            }
+            // DII の無い PID のブロックや、DII に無いモジュールのブロックも不完全として扱う。
+            foreach (var (pid, pidBlocks) in blocksByPid)
+            {
+                if (!modulesByPid.TryGetValue(pid, out var modules)) { incomplete = true; continue; }
+                foreach (var moduleId in pidBlocks.Keys)
+                {
+                    if (!modules.ContainsKey(moduleId)) incomplete = true;
+                }
+            }
+            if (incomplete)
+            {
+                WriteLog($"注意: データ放送の引き継ぎが一巡ぶん揃っていません (完全なモジュール {completeModules}/{totalModules})。受信側でデータ放送を組み立てられない場合があります。");
+            }
+        }
+        catch
+        {
+            // 確認に失敗しても出力には影響しないため、注意は出さずに続ける。
+        }
     }
 }
