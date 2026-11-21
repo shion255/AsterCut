@@ -671,6 +671,9 @@ internal sealed partial class MainForm
         }
         for (var i = indices.Count - 1; i >= 0; i--) _segments.RemoveAt(indices[i]);
         RefreshSegmentList();
+        // 削除後は、削除した位置へ来た下の区間を選択する (下が無ければ上の区間)。
+        // チャプターを削除したときの選択の動きとそろえる。
+        if (_segments.Count > 0) SelectSegmentIndices(Math.Min(indices[0], _segments.Count - 1));
         WriteLog($"カット区間を削除 ({indices.Count} 件): " + string.Join(" / ", details));
     }
 
