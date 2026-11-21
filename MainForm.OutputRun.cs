@@ -308,25 +308,11 @@ internal sealed partial class MainForm
         {
             WriteLog(message);
             SetStatus("完了");
-            MessageBox.Show($"{message}\n\n出力先:\n{_finalOutput}", AppTitle, MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
         else
         {
             WriteLog(message);
             SetStatus("失敗またはキャンセル");
-            if (_cancelRequested)
-            {
-                MessageBox.Show("処理をキャンセルしました。", AppTitle, MessageBoxButtons.OK, MessageBoxIcon.Information);
-            }
-            else
-            {
-                var details = _lastProcessErrorTail;
-                if (string.IsNullOrWhiteSpace(details)) details = "FFmpeg から追加のエラー情報が返されませんでした。";
-                var commandText = _lastProcessCommand;
-                var shortCommand = commandText.Length > 900 ? commandText[..900] + " ..." : commandText;
-                var messageText = $"{message}\r\n\r\n処理: {_currentStepDescription}\r\n\r\nFFmpeg ログ末尾:\r\n{details}\r\n\r\n実行コマンド（先頭部分）:\r\n{shortCommand}\r\n\r\n詳細ログは「実行ログ」タブに記録されています。";
-                MessageBox.Show(messageText, AppTitle, MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
         }
     }
 
