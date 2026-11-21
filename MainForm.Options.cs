@@ -208,7 +208,7 @@ internal sealed partial class MainForm
         var opusWarningCheck = new CheckBox
         {
             Text = "Opus in MP4 の確認ポップアップを表示する",
-            Location = new Point(8, 42),
+            Location = new Point(8, 70),
             Size = new Size(464, 26),
             ForeColor = Theme.LabelFore,
             BackColor = Color.Transparent,
@@ -217,11 +217,11 @@ internal sealed partial class MainForm
         generalPanel.Controls.Add(opusWarningCheck);
 
         // 仕様・使い方の日本語の表示フォント (英数字は Consolas で固定)。
-        generalPanel.Controls.Add(Theme.MakeLabel("仕様・使い方のフォント:", 8, 70, 240, 24));
+        generalPanel.Controls.Add(Theme.MakeLabel("仕様・使い方のフォント:", 8, 98, 240, 24));
 
         var japaneseFontCombo = new ThemedComboBox
         {
-            Location = new Point(76, 98),
+            Location = new Point(76, 126),
             Size = new Size(240, 28),
             DropDownStyle = ComboBoxStyle.DropDownList,
             DrawMode = DrawMode.OwnerDrawFixed,
@@ -242,8 +242,19 @@ internal sealed partial class MainForm
         var currentFontName = GetSpecFontName(_settings.SpecJapaneseFontName, "Yu Gothic");
         if (japaneseFontCombo.Items.Contains(currentFontName)) japaneseFontCombo.SelectedItem = currentFontName;
         generalPanel.Controls.Add(japaneseFontCombo);
-        generalPanel.Controls.Add(Theme.MakeLabel("日本語:", 8, 98, 64, 26));
+        generalPanel.Controls.Add(Theme.MakeLabel("日本語:", 8, 126, 64, 26));
         AlignLabelAndBox(FindLabelByText(generalPanel, "日本語:"), japaneseFontCombo, gap, true);
+
+        var autoClosePopupCheck = new CheckBox
+        {
+            Text = "動画出力終了時にポップアップを自動的に閉じる",
+            Location = new Point(8, 42),
+            Size = new Size(464, 26),
+            ForeColor = Theme.LabelFore,
+            BackColor = Color.Transparent,
+            Checked = _settings.AutoCloseOutputLogPopup,
+        };
+        generalPanel.Controls.Add(autoClosePopupCheck);
 
         var okButton = Theme.MakeButton("OK", 432, 460, 96, 32);
         okButton.DialogResult = DialogResult.OK;
@@ -258,6 +269,7 @@ internal sealed partial class MainForm
             _settings.FixedOutputDirectory = fixedOutputBox.Text.Trim().Trim('"');
             UpdateOutputNameView();
             _settings.SpecJapaneseFontName = japaneseFontCombo.SelectedItem?.ToString() ?? "BIZ UDPゴシック";
+            _settings.AutoCloseOutputLogPopup = autoClosePopupCheck.Checked;
             SaveSettingsFromUi();
             ApplySpecTextFonts();
             _ = CheckTrimSupportAsync();

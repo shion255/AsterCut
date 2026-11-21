@@ -24,6 +24,7 @@ internal sealed class AppSettings
     public int WindowHeight { get; set; } = 1000;
     public bool RememberWindowSize { get; set; } = true;
     public bool SuppressOpusInMp4Warning { get; set; }
+    public bool AutoCloseOutputLogPopup { get; set; }
     public bool FixedOutputDirectoryEnabled { get; set; }
     public string FixedOutputDirectory { get; set; } = "";
     public string OutputProfileName { get; set; } = "";
@@ -143,6 +144,11 @@ internal sealed class AppSettings
                 (suppressOpusWarning.ValueKind == JsonValueKind.True || suppressOpusWarning.ValueKind == JsonValueKind.False))
             {
                 settings.SuppressOpusInMp4Warning = suppressOpusWarning.GetBoolean();
+            }
+            if (root.TryGetProperty("AutoCloseOutputLogPopup", out var autoClosePopup) &&
+                (autoClosePopup.ValueKind == JsonValueKind.True || autoClosePopup.ValueKind == JsonValueKind.False))
+            {
+                settings.AutoCloseOutputLogPopup = autoClosePopup.GetBoolean();
             }
             if (root.TryGetProperty("FixedOutputDirectoryEnabled", out var fixedOutputDir) &&
                 (fixedOutputDir.ValueKind == JsonValueKind.True || fixedOutputDir.ValueKind == JsonValueKind.False))

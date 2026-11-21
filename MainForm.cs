@@ -1624,6 +1624,7 @@ internal sealed partial class MainForm : Form
         if (_logTextBox.IsDisposed) return;
         var stamp = DateTime.Now.ToString("HH:mm:ss");
         _logTextBox.AppendText($"[{stamp}] {message}\r\n");
+        AppendOutputLogPopupLine($"[{stamp}] {message}");
         var lines = _logTextBox.Lines;
         if (lines.Length > 1500)
         {

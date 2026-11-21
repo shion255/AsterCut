@@ -50,6 +50,9 @@ internal sealed partial class MainForm
     private long _jobCompletedExpectedMs;
     private long _currentStepProgressMs;
     private double _smoothedRemainingMs = -1;
+    private Form? _outputLogPopup;
+    private TextBox? _outputLogPopupBox;
+    private bool _outputLogCapture;
 
     private string GetFFmpegPath()
     {
@@ -127,6 +130,7 @@ internal sealed partial class MainForm
             _jobRunning = true;
             _cancelButton.Enabled = true;
             StartJobDisplay(steps);
+            OpenOutputLogPopup();
             if (_outputRunButton != null) _outputRunButton.Enabled = false;
             if (_encodeRunButton != null) _encodeRunButton.Enabled = false;
             SetStatus("FFmpeg 実行中...");
@@ -145,6 +149,7 @@ internal sealed partial class MainForm
             {
                 try { Directory.Delete(tempFolder, true); } catch { }
             }
+            if (_outputLogCapture) FinishOutputLogPopup(false);
             MessageBox.Show(ex.Message, AppTitle, MessageBoxButtons.OK, MessageBoxIcon.Error);
             SetStatus("処理を開始できませんでした");
         }
@@ -314,6 +319,7 @@ internal sealed partial class MainForm
             WriteLog(message);
             SetStatus("失敗またはキャンセル");
         }
+        FinishOutputLogPopup(success);
     }
 
     private static readonly Regex FfmpegTimePattern = new(@"time=(\d+):(\d+):(\d+(?:\.\d+)?)", RegexOptions.Compiled);
@@ -373,6 +379,95 @@ internal sealed partial class MainForm
         LayoutBottomBar();
     }
 
+    // ------------------------------------------------------------------
+    // 出力中の実行ログポップアップ (その出力の開始から終了までのログだけを表示する)
+    // ------------------------------------------------------------------
+
+    private void OpenOutputLogPopup()
+    {
+        if (_outputLogPopup == null || _outputLogPopup.IsDisposed)
+        {
+            var box = new TextBox
+            {
+                Multiline = true,
+                ReadOnly = true,
+                WordWrap = false,
+                ScrollBars = ScrollBars.Both,
+                BackColor = Color.FromArgb(23, 22, 29),
+                ForeColor = Color.FromArgb(203, 198, 216),
+                BorderStyle = BorderStyle.None,
+                Font = new Font("Consolas", 9f),
+                Dock = DockStyle.Fill,
+            };
+            Theme.ApplyDarkScrollBars(box);
+            var popup = new Form
+            {
+                Icon = AppIcon.Value,
+                Text = "動画出力中",
+                Size = new Size(940, 550),
+                FormBorderStyle = FormBorderStyle.Sizable,
+                MaximizeBox = false,
+                MinimizeBox = false,
+                ShowInTaskbar = false,
+                BackColor = Theme.PageBack,
+                AutoScaleMode = AutoScaleMode.None,
+            };
+            popup.Controls.Add(box);
+            popup.FormClosed += (_, _) =>
+            {
+                _outputLogPopup = null;
+                _outputLogPopupBox = null;
+                _outputLogCapture = false;
+                try { box.Font.Dispose(); } catch { }
+            };
+            Theme.ApplyDarkTitleBar(popup);
+            _outputLogPopup = popup;
+            _outputLogPopupBox = box;
+        }
+        _outputLogPopupBox!.Clear();
+        _outputLogPopup.Text = "動画出力中";
+        // 大きさは記憶しないため、開くたびに既定の大きさへ戻す。
+        _outputLogPopup.Size = new Size(940, 550);
+        _outputLogCapture = true;
+        if (!_outputLogPopup.Visible)
+        {
+            _outputLogPopup.StartPosition = FormStartPosition.Manual;
+            _outputLogPopup.Location = new Point(
+                Math.Max(0, Location.X + (Width - _outputLogPopup.Width) / 2),
+                Math.Max(0, Location.Y + (Height - _outputLogPopup.Height) / 2));
+            _outputLogPopup.Show(this);
+        }
+    }
+
+    private void AppendOutputLogPopupLine(string line)
+    {
+        if (!_outputLogCapture) return;
+        var box = _outputLogPopupBox;
+        if (box == null || box.IsDisposed) return;
+        box.AppendText(line + "\r\n");
+        var lines = box.Lines;
+        if (lines.Length > 1500)
+        {
+            box.Lines = lines[(lines.Length - 1000)..];
+        }
+        box.SelectionStart = box.TextLength;
+        box.SelectionLength = 0;
+        box.ScrollToCaret();
+    }
+
+    private void FinishOutputLogPopup(bool success)
+    {
+        _outputLogCapture = false;
+        var popup = _outputLogPopup;
+        if (popup == null || popup.IsDisposed) return;
+        if (success && _settings.AutoCloseOutputLogPopup)
+        {
+            popup.Close();
+            return;
+        }
+        popup.Text = success ? "動画出力完了" : _cancelRequested ? "動画出力をキャンセルしました" : "動画出力に失敗しました";
+    }
+
     private void UpdateJobTimeDisplay()
     {
         var elapsed = DateTime.Now - _jobStartedAt;
@@ -392,6 +487,10 @@ internal sealed partial class MainForm
         }
         _jobElapsedLabel.Text = $"経過 {FormatJobClock(elapsed)}";
         _jobEtaLabel.Text = etaText;
+        if (_outputLogPopup != null && !_outputLogPopup.IsDisposed)
+        {
+            _outputLogPopup.Text = $"動画出力中 - {_jobElapsedLabel.Text} / {_jobEtaLabel.Text}";
+        }
     }
 
     private double ComputeJobFraction()
