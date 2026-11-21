@@ -87,9 +87,17 @@ internal sealed partial class MainForm
 
         // ---------------- 「パス」 ----------------
 
-        TextBox MakePathRow(Control parent, string labelText, int y, string value, string fileName)
+        var pathRows = new System.Collections.Generic.List<(TextBox Box, Button Browse)>();
+        var pathLabels = new System.Collections.Generic.List<Label>();
+
+        TextBox MakePathRow(Control parent, string labelText, int y, string value, string fileName, int labelYOffset = 2)
         {
-            parent.Controls.Add(Theme.MakeLabel(labelText, 8, y, 64, 26));
+            // ラベルの文字はボックスの文字より上に寄るため、少し下げて中央に合わせる。
+            // 幅は文字幅に合わせ、末尾の「:」などが欠けないようにする。
+            var rowLabel = Theme.MakeLabel(labelText, 8, y + labelYOffset, 64, 26);
+            parent.Controls.Add(rowLabel);
+            rowLabel.Width = rowLabel.PreferredWidth;
+            pathLabels.Add(rowLabel);
             var box = Theme.MakeTextBox(76, y, 318);
             box.Text = value;
             parent.Controls.Add(box);
@@ -105,18 +113,18 @@ internal sealed partial class MainForm
                 if (picker.ShowDialog(dialog) == DialogResult.OK) box.Text = picker.FileName;
             };
             parent.Controls.Add(browse);
+            pathRows.Add((box, browse));
             return box;
         }
 
         var ffmpegBox = MakePathRow(pathPanel, "ffmpeg:", 14, _ffmpegPath, "ffmpeg.exe");
         var ffprobeBox = MakePathRow(pathPanel, "ffprobe:", 54, _ffprobePath, "ffprobe.exe");
-        var mpvBox = MakePathRow(pathPanel, "mpv:", 94, _mpvPath, "mpv.exe");
+        // mpv のラベルだけは、実機では他の行より文字が下に寄って表示されるため、4px 上に置く。
+        var mpvBox = MakePathRow(pathPanel, "mpv:", 94, _mpvPath, "mpv.exe", -2);
 
-        // ラベルと入力欄の間隔は、本体の基準 (画質 (crf): の行) にそろえる。
+        // ラベルと入力欄の間隔の基準 (「全般」のコンボで使う)。
+        // パスの欄は、ラベルの文字幅に合わせず、全行で位置と幅を統一する。
         var gap = GetLabelBoxGap();
-        AlignLabelAndBox(FindLabelByText(pathPanel, "ffmpeg:"), ffmpegBox, gap, true);
-        AlignLabelAndBox(FindLabelByText(pathPanel, "ffprobe:"), ffprobeBox, gap, true);
-        AlignLabelAndBox(FindLabelByText(pathPanel, "mpv:"), mpvBox, gap, true);
 
         var trimLabel = Theme.MakeLabel(_trimStatusText, 8, 134, 472, 24);
         trimLabel.ForeColor = _trimStatusColor;
@@ -134,7 +142,11 @@ internal sealed partial class MainForm
         };
         pathPanel.Controls.Add(fixedOutputCheck);
 
-        pathPanel.Controls.Add(Theme.MakeLabel("フォルダー:", 8, 194, 64, 26));
+        // フォルダーのラベルは 64px では文字が入りきらず折り返して欠けるため、文字幅に合わせる。
+        // 縦位置は、実機では他の行より文字が下に寄って表示されるため、3px 上に置く。
+        var folderLabel = Theme.MakeLabel("フォルダー:", 8, 193, 64, 26);
+        pathPanel.Controls.Add(folderLabel);
+        folderLabel.Width = folderLabel.PreferredWidth;
         var fixedOutputBox = Theme.MakeTextBox(76, 194, 318);
         fixedOutputBox.Text = _settings.FixedOutputDirectory;
         pathPanel.Controls.Add(fixedOutputBox);
@@ -151,7 +163,6 @@ internal sealed partial class MainForm
             if (picker.ShowDialog(dialog) == DialogResult.OK) fixedOutputBox.Text = picker.SelectedPath;
         };
         pathPanel.Controls.Add(fixedOutputBrowse);
-        AlignLabelAndBox(FindLabelByText(pathPanel, "フォルダー:"), fixedOutputBox, gap, true);
         void UpdateFixedOutputEnabled()
         {
             fixedOutputBox.Enabled = fixedOutputCheck.Checked;
@@ -159,6 +170,18 @@ internal sealed partial class MainForm
         }
         fixedOutputCheck.CheckedChanged += (_, _) => UpdateFixedOutputEnabled();
         UpdateFixedOutputEnabled();
+        pathRows.Add((fixedOutputBox, fixedOutputBrowse));
+
+        // ボックスは、全行で一番長いラベルの後ろから始める (ラベルがボックスに重なって
+        // 左端を隠さないようにする)。右端は元の位置のまま、幅だけ短くなる。
+        var longestLabel = folderLabel.PreferredWidth;
+        foreach (var pathLabel in pathLabels) longestLabel = Math.Max(longestLabel, pathLabel.PreferredWidth);
+        var pathBoxLeft = 8 + longestLabel + 6;
+        foreach (var row in pathRows)
+        {
+            row.Box.Left = pathBoxLeft;
+            row.Box.Width = Math.Max(10, 394 - pathBoxLeft);
+        }
 
         // ---------------- 「全般」 ----------------
 
@@ -237,13 +260,13 @@ internal sealed partial class MainForm
         dialog.AcceptButton = okButton;
         dialog.CancelButton = cancelButton;
 
-        dialog.Shown += (_, _) =>
+        // パスの欄は、ダイアログ表示の時点では非表示のパネル内にあり、まだハンドルが
+        // 作られていないため、ハンドルが作られた時点で先頭の余白を付ける。
+        foreach (var pathBox in new[] { ffmpegBox, ffprobeBox, mpvBox, fixedOutputBox })
         {
-            ApplyTextBoxMarginsOnce(ffmpegBox, 2, 0);
-            ApplyTextBoxMarginsOnce(ffprobeBox, 2, 0);
-            ApplyTextBoxMarginsOnce(mpvBox, 2, 0);
-            ApplyTextBoxMarginsOnce(fixedOutputBox, 2, 0);
-        };
+            pathBox.HandleCreated += (_, _) => ApplyTextBoxMarginsOnce(pathBox, 2, 0);
+            if (pathBox.IsHandleCreated) ApplyTextBoxMarginsOnce(pathBox, 2, 0);
+        }
 
         Theme.ApplyDarkTitleBar(dialog);
         dialog.ShowDialog(this);
