@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.Globalization;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -744,9 +745,16 @@ internal sealed partial class MainForm : Form
         };
         _segmentListFrame.Paint += (_, e) =>
         {
+            // 枠の角は、区間カードの角丸 (半径6) と同心の角丸にする。
+            var previousSmoothing = e.Graphics.SmoothingMode;
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            using var path = CreateRoundedRectPath(new Rectangle(0, 0, _segmentListFrame.Width - 1, _segmentListFrame.Height - 1), SegmentListFrameCornerRadius);
             using var pen = new Pen(Color.FromArgb(88, 80, 110));
-            e.Graphics.DrawRectangle(pen, 0, 0, _segmentListFrame.Width - 1, _segmentListFrame.Height - 1);
+            e.Graphics.DrawPath(pen, path);
+            e.Graphics.SmoothingMode = previousSmoothing;
         };
+        _segmentListFrame.SizeChanged += (_, _) => UpdateSegmentListFrameRegion();
+        UpdateSegmentListFrameRegion();
         segmentGroup.Controls.Add(_segmentListFrame);
         _segmentList = new ListBox
         {
@@ -1540,6 +1548,18 @@ internal sealed partial class MainForm : Form
         var width = (int)Math.Floor(Math.Max(0, Width - MinimumSize.Width) / 2.0);
         var height = Math.Max(0, Height - MinimumSize.Height);
         return (width, height);
+    }
+
+    // 区間一覧の枠の角の半径。カードの角 (半径6) と同心になるよう、カードまでの距離 (3) を足す。
+    private const int SegmentListFrameCornerRadius = 9;
+
+    // 枠の外形も角丸に合わせる (角の外側に下地の四角が出ないように)。
+    private void UpdateSegmentListFrameRegion()
+    {
+        using var path = CreateRoundedRectPath(new Rectangle(0, 0, _segmentListFrame.Width - 1, _segmentListFrame.Height - 1), SegmentListFrameCornerRadius);
+        var oldRegion = _segmentListFrame.Region;
+        _segmentListFrame.Region = new Region(path);
+        oldRegion?.Dispose();
     }
 
     private void UpdateSegmentListBounds()
