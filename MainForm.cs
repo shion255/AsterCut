@@ -812,6 +812,17 @@ internal sealed partial class MainForm : Form
         };
         _segmentList.KeyDown += (_, e) =>
         {
+            if ((e.KeyCode == Keys.Up || e.KeyCode == Keys.Down) && !e.Control && !e.Alt && !e.Shift)
+            {
+                // ↑↓ は選択の移動ではなく、区間そのものの並べ替えにする (行の ↑↓ ボタンと同じ)。
+                if (_segmentList.SelectedIndex >= 0)
+                {
+                    e.Handled = true;
+                    e.SuppressKeyPress = true;
+                    MoveCutSegment(e.KeyCode == Keys.Up ? -1 : 1);
+                }
+                return;
+            }
             if (e.KeyCode == Keys.Delete && !e.Control && !e.Alt)
             {
                 if (_segmentList.SelectedIndex >= 0)
