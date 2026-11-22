@@ -83,6 +83,7 @@ internal sealed partial class MainForm : Form
     private LinkLabel _rotationLabel = null!;
     private readonly ToolStripMenuItem _undoMenuItem;
     private readonly ToolStripMenuItem _redoMenuItem;
+    private readonly ToolStripMenuItem _goToFrameMenuItem;
     private readonly Panel _logGroup;
     private readonly Panel _specGroup;
     private readonly TextBox _logTextBox;
@@ -226,7 +227,14 @@ internal sealed partial class MainForm : Form
             Enabled = false,
         };
         _redoMenuItem.Click += (_, _) => RedoSegmentOperation();
-        editMenu.DropDownItems.AddRange(new ToolStripItem[] { _undoMenuItem, _redoMenuItem });
+        _goToFrameMenuItem = new ToolStripMenuItem("指定したフレームへ移動...")
+        {
+            ForeColor = Theme.MenuFore,
+            ShortcutKeys = Keys.Control | Keys.G,
+        };
+        _goToFrameMenuItem.Click += (_, _) => ShowGoToFrameDialog();
+        editMenu.DropDownOpening += (_, _) => _goToFrameMenuItem.Enabled = _previewReady && TestFrameTableReady();
+        editMenu.DropDownItems.AddRange(new ToolStripItem[] { _undoMenuItem, _redoMenuItem, new ToolStripSeparator(), _goToFrameMenuItem });
 
         var toolMenu = new ToolStripMenuItem("ツール") { ForeColor = Theme.MenuFore };
         var updateFfmpegItem = new ToolStripMenuItem("ffmpeg / ffprobe / ffplay の更新...")

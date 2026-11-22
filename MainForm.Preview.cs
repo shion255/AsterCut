@@ -1252,6 +1252,80 @@ internal sealed partial class MainForm
     }
 
     /// <summary>
+    /// 指定したフレームへ移動するダイアログを出す。フレーム番号は位置表示と同じ 0 始まりで、
+    /// 現在のフレームを初期値にする。移動はシークバーの操作と同じ経路で行う。
+    /// </summary>
+    private void ShowGoToFrameDialog()
+    {
+        if (!_previewReady || !TestFrameTableReady()) return;
+        var lastIndex = _frameTimesUs!.Length - 1;
+        var currentIndex = FindFrameIndexAtOrBefore(GetPreviewPositionUs());
+        if (currentIndex < 0) currentIndex = 0;
+
+        using var dialog = new Form
+        {
+            Icon = AppIcon.Value,
+            Text = "指定したフレームへ移動",
+            StartPosition = FormStartPosition.CenterParent,
+            ClientSize = new Size(360, 100),
+            FormBorderStyle = FormBorderStyle.FixedDialog,
+            MaximizeBox = false,
+            MinimizeBox = false,
+            ShowInTaskbar = false,
+            BackColor = Theme.PageBack,
+            ForeColor = Theme.MenuFore,
+            Font = Font,
+            AutoScaleMode = AutoScaleMode.None,
+        };
+        Theme.ApplyDarkTitleBar(dialog);
+
+        dialog.Controls.Add(Theme.MakeLabel($"フレーム番号 (0 ～ {lastIndex})", 16, 12, 328, 24));
+        var frameBox = Theme.MakeTextBox(16, 42, 140, 28);
+        frameBox.Text = currentIndex.ToString();
+        frameBox.SelectAll();
+        dialog.Controls.Add(frameBox);
+
+        var targetIndex = -1;
+        var moveButton = Theme.MakeButton("移動", 164, 41, 76, 30);
+        moveButton.Click += (_, _) =>
+        {
+            if (!int.TryParse(frameBox.Text.Trim(), out var index))
+            {
+                frameBox.SelectAll();
+                frameBox.Focus();
+                return;
+            }
+            targetIndex = Math.Clamp(index, 0, lastIndex);
+            dialog.DialogResult = DialogResult.OK;
+        };
+        dialog.Controls.Add(moveButton);
+        var cancelButton = Theme.MakeButton("キャンセル", 248, 41, 96, 30);
+        cancelButton.Click += (_, _) => dialog.DialogResult = DialogResult.Cancel;
+        dialog.Controls.Add(cancelButton);
+        dialog.AcceptButton = moveButton;
+        dialog.CancelButton = cancelButton;
+        dialog.Shown += (_, _) => frameBox.Focus();
+
+        if (dialog.ShowDialog(this) == DialogResult.OK && targetIndex >= 0)
+        {
+            GoToPreviewFrame(targetIndex);
+        }
+    }
+
+    /// <summary>指定したフレームへプレビューを移動する。再生中なら一時停止してから移動する。</summary>
+    private void GoToPreviewFrame(int frameIndex)
+    {
+        if (!_previewReady || !TestFrameTableReady()) return;
+        frameIndex = Math.Clamp(frameIndex, 0, _frameTimesUs!.Length - 1);
+        if (_previewIsPlaying)
+        {
+            try { InvokePlayerPause(); } catch { }
+            _previewIsPlaying = false;
+        }
+        SeekPreviewToMs(GetFrameFloorMs(frameIndex));
+    }
+
+    /// <summary>
     /// 指定した位置 (ms) へプレビューをシークする。シークバーの表示も追随させる。
     /// 開始・終了欄の値はフレームの位置をミリ秒へ切り捨てたものなので、合わせ先は
     /// その値以後で最初のフレームにする (その値以前のフレームに合わせると、
