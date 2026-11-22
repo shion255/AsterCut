@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.Globalization;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -139,6 +140,7 @@ internal sealed partial class MainForm : Form
     private readonly System.Windows.Forms.Timer _frameIndexTimer;
 
     private bool _shownOnce;
+    private bool _tabStripKeyActive;
 
     [DllImport("user32.dll", CharSet = CharSet.Auto)]
     private static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
@@ -744,8 +746,13 @@ internal sealed partial class MainForm : Form
         };
         _segmentListFrame.Paint += (_, e) =>
         {
+            // 枠の角は、区間カードの角丸 (半径6) と同心の角丸にする。
+            var previousSmoothing = e.Graphics.SmoothingMode;
+            e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            using var path = CreateRoundedRectPath(new Rectangle(0, 0, _segmentListFrame.Width - 1, _segmentListFrame.Height - 1), SegmentListFrameCornerRadius);
             using var pen = new Pen(Color.FromArgb(88, 80, 110));
-            e.Graphics.DrawRectangle(pen, 0, 0, _segmentListFrame.Width - 1, _segmentListFrame.Height - 1);
+            e.Graphics.DrawPath(pen, path);
+            e.Graphics.SmoothingMode = previousSmoothing;
         };
         segmentGroup.Controls.Add(_segmentListFrame);
         _segmentList = new ListBox
@@ -979,10 +986,10 @@ internal sealed partial class MainForm : Form
         };
         _tabs.KeyDown += (_, e) =>
         {
-            // タブ一覧にフォーカスがあるときの ↑ は最初のタブ、↓ は最後のタブへの移動にする
+            // タブ一覧がアクティブなときの ↑ は最初のタブ、↓ は最後のタブへの移動にする
             // (フォーム側のキー判定でも同じ移動をするが、届き方で反応が変わらないよう両方で受ける)。
             // プレビュー操作中は ↑↓ が音量なので除く。
-            if (_previewKeyboardActive || e.KeyCode is not (Keys.Up or Keys.Down)) return;
+            if (_previewKeyboardActive || !_tabStripKeyActive || e.KeyCode is not (Keys.Up or Keys.Down)) return;
             _tabs.SelectedIndex = e.KeyCode == Keys.Up ? 0 : _tabs.TabCount - 1;
             e.Handled = true;
             e.SuppressKeyPress = true;
@@ -1005,6 +1012,12 @@ internal sealed partial class MainForm : Form
                 _tabs.SelectedIndex = nextIndex;
             }
         };
+        // 矢印キーでタブを移動できるのは、タブ一覧がアクティブな間だけにする。
+        // 見出しのクリックと、キー操作でタブ一覧へフォーカスが移ったときにアクティブになり、
+        // それ以外の場所のクリックで非アクティブになる。
+        Application.AddMessageFilter(new TabStripFocusFilter(this));
+        _tabs.GotFocus += (_, _) => _tabStripKeyActive = true;
+        _tabs.LostFocus += (_, _) => _tabStripKeyActive = false;
         foreach (var page in new[] { _sourceTab, _cutTab, _chapterTab, _outputTab, _logTab, _specTab })
         {
             page.SizeChanged += (_, _) => UpdateTabPageLayouts();
@@ -1538,6 +1551,9 @@ internal sealed partial class MainForm : Form
         var height = Math.Max(0, Height - MinimumSize.Height);
         return (width, height);
     }
+
+    // 区間一覧の枠の角の半径。カードの角 (半径6) と同心になるよう、カードまでの距離 (3) を足す。
+    private const int SegmentListFrameCornerRadius = 9;
 
     private void UpdateSegmentListBounds()
     {
@@ -2730,5 +2746,27 @@ internal sealed partial class MainForm : Form
         ApplyTextBoxMarginsOnce(_cutStartBox, 2, 0);
         ApplyTextBoxMarginsOnce(_cutEndBox, 2, 0);
         ApplyTextBoxMarginsOnce(_chapterStartBox, 2, 0);
+    }
+
+    /// <summary>
+    /// クリックされた場所から、タブ一覧がアクティブかどうかを記録するフィルター。
+    /// 見出しのクリックだけをアクティブとし、それ以外の場所 (ページの余白を含む) の
+    /// クリックは非アクティブにする。実際のフォーカス先は環境で動きが違うため、
+    /// フォーカスを外しに行くのではなく、この記録だけで矢印キーの効きを決める。
+    /// ホイールでのタブ移動 (見出しの上) には影響しない。
+    /// </summary>
+    private sealed class TabStripFocusFilter : IMessageFilter
+    {
+        private const int WmLButtonDown = 0x0201;
+        private readonly MainForm _form;
+
+        public TabStripFocusFilter(MainForm form) => _form = form;
+
+        public bool PreFilterMessage(ref Message m)
+        {
+            if (m.Msg != WmLButtonDown || _form.IsDisposed) return false;
+            _form._tabStripKeyActive = Control.FromHandle(m.HWnd) == _form._tabs;
+            return false;
+        }
     }
 }

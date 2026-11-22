@@ -117,12 +117,11 @@ internal sealed partial class MainForm
     /// </summary>
     protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
     {
-        // タブ一覧にフォーカスがあるとき (←→ でタブを移動できる状態) は、
+        // タブ一覧がアクティブなとき (見出しをクリックした直後など) は、
         // ↑ を最初のタブ、↓ を最後のタブへの移動にする。
-        // プレビュー操作中は ↑↓ が音量なので除く (プレビューの子ウィンドウをクリックしても
-        // フォーム側のフォーカスはタブ一覧に残ることがあるため、こちらでも判定する)。
+        // プレビュー操作中は ↑↓ が音量なので除く。
         if (!_previewKeyboardActive
-            && ActiveControl == _tabs
+            && _tabStripKeyActive
             && keyData is Keys.Up or Keys.Down)
         {
             _tabs.SelectedIndex = keyData == Keys.Up ? 0 : _tabs.TabCount - 1;
@@ -142,7 +141,25 @@ internal sealed partial class MainForm
                 case Keys.Down: AdjustPreviewVolume(-1); return true;
             }
         }
+        // タブ一覧にフォーカスが残っているのにアクティブでないときは、←→ が
+        // タブコントロール本来のタブ移動に使われてしまうため、ここで飲み込む。
+        if (!_tabStripKeyActive
+            && keyData is Keys.Left or Keys.Right
+            && IsTabStripNativeFocused())
+        {
+            return true;
+        }
         return base.ProcessCmdKey(ref msg, keyData);
+    }
+
+    /// <summary>
+    /// 実際のフォーカス先 (GetFocus) がタブ一覧そのものか。←→ の飲み込み判定専用で、
+    /// アクティブかどうかの判定には使わない (クリックで記録したフラグで決める)。
+    /// </summary>
+    private bool IsTabStripNativeFocused()
+    {
+        var handle = GetFocus();
+        return handle != IntPtr.Zero && Control.FromHandle(handle) == _tabs;
     }
 
     /// <summary>一覧やバーなど、矢印キーを自身の操作に使うコントロールにフォーカスがあるか。</summary>
