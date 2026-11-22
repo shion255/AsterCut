@@ -342,7 +342,12 @@ internal sealed partial class MainForm
     {
         if (_clipPreviewPanel == null || _clipPreviewPanel.IsDisposed) return;
         var width = _clipPreviewPanel.ClientSize.Width;
-        if (_clipPositionLabel != null) _clipPositionLabel.Width = Math.Max(180, width - 24);
+        if (_clipPositionLabel != null)
+        {
+            // 再生時間は、設定パネルを除いたプレビュー画面 (映像) の幅に合わせて中央揃えにする。
+            var videoWidth = _clipVideoPanel?.ClientSize.Width ?? width;
+            _clipPositionLabel.Width = Math.Max(180, videoWidth - 24);
+        }
         if (_clipSeekTrackBar != null) _clipSeekTrackBar.Width = Math.Max(220, width - 24);
     }
 
@@ -439,6 +444,7 @@ internal sealed partial class MainForm
         };
 
         var clipPosition = Theme.MakeLabel("再生位置: --:--:--.---", 12, 4, 700, 22);
+        clipPosition.TextAlign = ContentAlignment.MiddleCenter;
         clipPosition.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
         var clipSeek = new SeekTrackBar
         {

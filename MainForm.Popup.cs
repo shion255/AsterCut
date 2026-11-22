@@ -146,6 +146,7 @@ internal sealed partial class MainForm
         };
 
         var popupPosition = Theme.MakeLabel("再生位置: --:--:--.---", 12, 4, 700, 22);
+        popupPosition.TextAlign = ContentAlignment.MiddleCenter;
         popupPosition.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
         var popupSeek = new SeekTrackBar
         {
