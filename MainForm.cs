@@ -770,6 +770,8 @@ internal sealed partial class MainForm : Form
             SelectionMode = SelectionMode.MultiExtended,
             AllowDrop = true,
         };
+        _segmentList.SizeChanged += (_, _) => UpdateSegmentListRegion();
+        UpdateSegmentListRegion();
         Theme.ApplyDarkScrollBars(_segmentList);
         _segmentList.ItemHeight = Math.Max(26, _segmentList.Font.Height + 10);
         _segmentList.DrawItem += (_, e) => DrawSegmentListItem(e);
@@ -1554,6 +1556,20 @@ internal sealed partial class MainForm : Form
 
     // 区間一覧の枠の角の半径。カードの角 (半径6) と同心になるよう、カードまでの距離 (3) を足す。
     private const int SegmentListFrameCornerRadius = 9;
+
+    // 一覧の角も、枠の角丸の内側に沿う角丸で切り取る (一覧の四角い角が枠線に重なって
+    // 角丸を切って見せないようにするため)。半径は、枠の角と同心になるよう
+    // 一覧の位置 (1, 1) の分だけ小さい。
+    private const int SegmentListCornerRadius = 8;
+
+    private void UpdateSegmentListRegion()
+    {
+        if (_segmentList.Width <= 0 || _segmentList.Height <= 0) return;
+        using var path = CreateRoundedRectPath(new Rectangle(0, 0, _segmentList.Width - 1, _segmentList.Height - 1), SegmentListCornerRadius);
+        var oldRegion = _segmentList.Region;
+        _segmentList.Region = new Region(path);
+        oldRegion?.Dispose();
+    }
 
     private void UpdateSegmentListBounds()
     {
