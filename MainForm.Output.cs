@@ -15,6 +15,7 @@ internal sealed partial class MainForm
     private Label _profileDirtyLabel = null!;
     private Button _addProfileButton = null!;
     private Button _saveProfileButton = null!;
+    private Button _deleteProfileButton = null!;
     private ComboBox _videoFormatCombo = null!;
     private TextBox _videoCrfBox = null!;
     private ComboBox _bitDepthCombo = null!;
@@ -129,10 +130,13 @@ internal sealed partial class MainForm
         _encodeSettingsGroup.Controls.Add(_addProfileButton);
         _saveProfileButton = Theme.MakeButton("現在のプロファイルに保存", 498, 21, 210, 30);
         _encodeSettingsGroup.Controls.Add(_saveProfileButton);
+        _deleteProfileButton = Theme.MakeButton("プロファイルを削除", 716, 21, 150, 30);
+        _encodeSettingsGroup.Controls.Add(_deleteProfileButton);
         // グループの題字ラベル (幅 480) が行の上端に重なって枠を隠すため、手前に出す。
         _profileCombo.BringToFront();
         _addProfileButton.BringToFront();
         _saveProfileButton.BringToFront();
+        _deleteProfileButton.BringToFront();
         // 選択中のプロファイルから設定が変更されたことを示す印。プロファイル欄の右上に重ねて出す。
         // 背景は題字ラベルの帯に馴染むよう、ページの背景色にしておく。
         _profileDirtyLabel = new Label
@@ -266,6 +270,7 @@ internal sealed partial class MainForm
         _profileCombo.DropDown += (_, _) => RefreshProfileCombo(_profileCombo.SelectedItem?.ToString());
         _addProfileButton.Click += (_, _) => AddNewProfile();
         _saveProfileButton.Click += (_, _) => SaveCurrentProfile();
+        _deleteProfileButton.Click += (_, _) => DeleteCurrentProfile();
         _videoFormatCombo.SelectedIndexChanged += (_, _) => OnVideoFormatChanged();
         _audioFormatCombo.SelectedIndexChanged += (_, _) => OnAudioFormatChanged();
         _containerCombo.SelectedIndexChanged += (_, _) => OnContainerChanged();

@@ -248,6 +248,37 @@ internal sealed partial class MainForm
         }
     }
 
+    private void DeleteCurrentProfile()
+    {
+        var name = _profileCombo?.SelectedItem?.ToString();
+        if (string.IsNullOrEmpty(name))
+        {
+            MessageBox.Show("削除するプロファイルが選択されていません。", AppTitle, MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+        if (name is "保存用" or "投稿用")
+        {
+            MessageBox.Show("組み込みのプロファイルは削除できません。", AppTitle, MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+        if (MessageBox.Show($"プロファイル「{name}」を削除しますか？", AppTitle, MessageBoxButtons.OKCancel, MessageBoxIcon.Question) != DialogResult.OK)
+        {
+            return;
+        }
+        try
+        {
+            File.Delete(GetProfileFilePath(name));
+            RefreshProfileCombo("投稿用");
+            ApplySelectedProfile();
+            WriteLog($"プロファイルを削除しました: {name}");
+            SetStatus($"プロファイル「{name}」を削除しました");
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(ex.Message, AppTitle, MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+    }
+
     /// <summary>
     /// 選択中のプロファイルの保存内容と現在の設定が食い違うとき、プロファイル欄の右上に * を出す。
     /// プログラムからの適用中 (_profileControlsUpdating) は判定しない (適用後の呼び出しで確定する)。
