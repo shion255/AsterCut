@@ -2339,6 +2339,18 @@ internal sealed partial class MainForm : Form
         };
         Theme.ApplyDarkScrollBars(textBox);
         dialog.Controls.Add(textBox);
+        var copyButton = Theme.MakeButton("コピー", clientWidth - 260, clientHeight - 44, 120, 32);
+        copyButton.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
+        copyButton.Click += (_, _) =>
+        {
+            try
+            {
+                Clipboard.SetText(textBox.Text);
+                SetStatus("メタデータをコピーしました");
+            }
+            catch { /* クリップボードが使えない場合は何もしない */ }
+        };
+        dialog.Controls.Add(copyButton);
         var closeButton = Theme.MakeButton("閉じる", clientWidth - 132, clientHeight - 44, 120, 32);
         closeButton.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
         closeButton.DialogResult = DialogResult.Cancel;
