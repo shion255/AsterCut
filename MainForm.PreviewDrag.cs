@@ -421,6 +421,17 @@ internal sealed partial class MainForm
             var dimensions = GetVideoDimensions();
             var videoW = dimensions.Width;
             var videoH = dimensions.Height;
+            // アナモフィック素材では表示時の幅へ換算する (記録サイズのままで計算すると、
+            // 表示の縦横比とずれて、拡大しても黒帯が増えるだけになる)。
+            if (_videoStreams.Count > 0)
+            {
+                var sarNum = _videoStreams[0].SampleAspectNum;
+                var sarDen = _videoStreams[0].SampleAspectDen;
+                if (sarNum > 0 && sarDen > 0)
+                {
+                    videoW = (int)Math.Round(videoW * (double)sarNum / sarDen);
+                }
+            }
             var rotation = GetPreviewRotationClockwise();
             if (rotation is 90 or 270) (videoW, videoH) = (videoH, videoW);
             var panel = _mpvHostPanel;

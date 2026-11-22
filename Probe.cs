@@ -23,6 +23,8 @@ internal sealed class ProbeStream
     public string Duration { get; set; } = "";
     public int Width { get; set; }
     public int Height { get; set; }
+    public int SampleAspectNum { get; set; } = 1;
+    public int SampleAspectDen { get; set; } = 1;
     public string AvgFrameRate { get; set; } = "";
     public string RFrameRate { get; set; } = "";
     public int Channels { get; set; }
@@ -121,6 +123,8 @@ internal static class Probe
                     Duration = GetText(element, "duration"),
                     Width = GetInt(element, "width"),
                     Height = GetInt(element, "height"),
+                    SampleAspectNum = ParseAspectPart(GetText(element, "sample_aspect_ratio"), 0),
+                    SampleAspectDen = ParseAspectPart(GetText(element, "sample_aspect_ratio"), 1),
                     AvgFrameRate = GetText(element, "avg_frame_rate"),
                     RFrameRate = GetText(element, "r_frame_rate"),
                     Channels = GetInt(element, "channels"),
@@ -170,6 +174,14 @@ internal static class Probe
             JsonValueKind.Number => value.GetRawText(),
             _ => "",
         };
+    }
+
+    /// <summary>「4:3」のような SAR 文字列の分子 (part 0) / 分母 (part 1) を取り出す。不明な場合は 1。</summary>
+    private static int ParseAspectPart(string text, int part)
+    {
+        var pieces = (text ?? "").Split(':');
+        if (pieces.Length == 2 && int.TryParse(pieces[part].Trim(), out var value) && value > 0) return value;
+        return 1;
     }
 
     private static int GetInt(JsonElement obj, string name)
