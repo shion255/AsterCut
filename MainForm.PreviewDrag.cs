@@ -137,8 +137,8 @@ internal sealed partial class MainForm
             {
                 case Keys.Left: MovePreviewFrame(-1); return true;
                 case Keys.Right: MovePreviewFrame(1); return true;
-                case Keys.Up: AdjustPreviewVolume(1); return true;
-                case Keys.Down: AdjustPreviewVolume(-1); return true;
+                case Keys.Up: MovePreviewFrame(-5); return true;
+                case Keys.Down: MovePreviewFrame(5); return true;
             }
         }
         // タブ一覧にフォーカスが残っているのにアクティブでないときは、←→ が
@@ -205,7 +205,7 @@ internal sealed partial class MainForm
     }
 
     /// <summary>
-    /// プレビュー画面をクリックした後の ← / → (1 フレーム移動) と ↑ / ↓ (音量) をポーリングで拾う。
+    /// プレビュー画面をクリックした後の ← / → (1 フレーム移動) と ↑ / ↓ (5 フレーム移動) をポーリングで拾う。
     /// キー入力は mpv の子ウィンドウに届いて自ウィンドウに来ないため、スペースキーと同じ方式にする。
     /// 自ウィンドウのコントロールにフォーカスがある間は、そのコントロールのキー操作に任せる。
     /// </summary>
@@ -230,20 +230,12 @@ internal sealed partial class MainForm
                 {
                     case 0: MovePreviewFrame(-1); break;
                     case 1: MovePreviewFrame(1); break;
-                    case 2: AdjustPreviewVolume(1); break;
-                    case 3: AdjustPreviewVolume(-1); break;
+                    case 2: MovePreviewFrame(-5); break;
+                    case 3: MovePreviewFrame(5); break;
                 }
             }
             _previewArrowWasDown[i] = down;
         }
-    }
-
-    /// <summary>音量をキー操作で増減する。音量バーを経由して、表示とプレーヤーへ反映する。</summary>
-    private void AdjustPreviewVolume(int delta)
-    {
-        if (_volumeTrackBar == null) return;
-        _volumeTrackBar.Value = Math.Clamp(_volumeSliderValue + delta, 0, 100);
-        SetPreviewVolumeFromTrackBar(_volumeTrackBar);
     }
 
     private void UpdatePreviewPointerDrag()
