@@ -27,6 +27,15 @@ internal sealed partial class MainForm
     [DllImport("user32.dll")]
     private static extern bool LockWindowUpdate(IntPtr hWndLock);
 
+    [DllImport("user32.dll")]
+    private static extern int GetWindowLong(IntPtr hWnd, int nIndex);
+
+    [DllImport("user32.dll")]
+    private static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
+
+    [DllImport("user32.dll")]
+    private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int x, int y, int cx, int cy, uint uFlags);
+
     private System.Windows.Forms.Timer _previewDragTimer = null!;
     private string _previewPointerState = "idle";
     private bool _spaceKeyWasDown;
@@ -302,8 +311,100 @@ internal sealed partial class MainForm
         }
     }
 
+    // ------------------------------------------------------------------
+    // プレビュー画面へのドラッグ & ドロップ
+    // 映像部分は mpv の子ウィンドウ (別プロセス) で覆われていて、こちらの
+    // ドロップ先を登録しても実機では効かないため、プレビューに重ねた透明な
+    // 受け付け用の画面で受ける。普段は WS_EX_TRANSPARENT でマウスを素通しし、
+    // アプリの外で始まったドラッグがプレビューに近づいたときだけ受け付ける。
+    // ------------------------------------------------------------------
+
+    private PreviewDropOverlayForm? _previewDropOverlay;
+    private bool _previewDropOverlayActive;
+    private bool _dropDragFromOutside;
+
+    private sealed class PreviewDropOverlayForm : Form
+    {
+        public PreviewDropOverlayForm(MainForm owner)
+        {
+            FormBorderStyle = FormBorderStyle.None;
+            ShowInTaskbar = false;
+            StartPosition = FormStartPosition.Manual;
+            BackColor = Color.Black;
+            Opacity = 0.02;
+            AllowDrop = true;
+            DragEnter += (_, e) => e.Effect = e.Data?.GetDataPresent(DataFormats.FileDrop) == true ? DragDropEffects.Copy : DragDropEffects.None;
+            DragOver += (_, e) => e.Effect = e.Data?.GetDataPresent(DataFormats.FileDrop) == true ? DragDropEffects.Copy : DragDropEffects.None;
+            DragDrop += (_, e) =>
+            {
+                if (e.Data?.GetData(DataFormats.FileDrop) is string[] { Length: > 0 } files) owner.OpenDroppedInputFile(files[0]);
+            };
+        }
+
+        protected override bool ShowWithoutActivation => true;
+
+        protected override CreateParams CreateParams
+        {
+            get
+            {
+                var cp = base.CreateParams;
+                cp.ExStyle |= 0x20; // WS_EX_TRANSPARENT: 普段はマウスを素通しする
+                return cp;
+            }
+        }
+    }
+
+    private bool IsPointOverAppWindow(Point pos)
+    {
+        var hwnd = WindowFromPoint(pos);
+        if (hwnd == IntPtr.Zero) return false;
+        var root = hwnd;
+        for (;;)
+        {
+            var parent = GetParent(root);
+            if (parent == IntPtr.Zero) break;
+            root = parent;
+        }
+        if (root == Handle) return true;
+        if (_previewPopupForm != null && root == _previewPopupForm.Handle) return true;
+        if (_segmentPopupForm != null && root == _segmentPopupForm.Handle) return true;
+        if (_clipForm != null && root == _clipForm.Handle) return true;
+        return false;
+    }
+
+    private void UpdatePreviewDropOverlay()
+    {
+        // パネルが本体フォーム上にある間だけ、パネルの画面上の矩形に重ねる。
+        var show = _mpvHostPanel.IsHandleCreated && _mpvHostPanel.Visible
+            && _mpvHostPanel.TopLevelControl == this && WindowState != FormWindowState.Minimized;
+        if (!show)
+        {
+            if (_previewDropOverlay is { Visible: true }) _previewDropOverlay.Hide();
+            return;
+        }
+        _previewDropOverlay ??= new PreviewDropOverlayForm(this);
+        var rect = _mpvHostPanel.RectangleToScreen(_mpvHostPanel.ClientRectangle);
+        if (!_previewDropOverlay.Visible) _previewDropOverlay.Show(this);
+        if (_previewDropOverlay.Bounds != rect) _previewDropOverlay.Bounds = rect;
+    }
+
+    private void SetPreviewDropOverlayActive(bool active)
+    {
+        if (_previewDropOverlay == null || !_previewDropOverlay.IsHandleCreated) return;
+        const int gwlExStyle = -20;
+        const int wsExTransparent = 0x20;
+        var style = GetWindowLong(_previewDropOverlay.Handle, gwlExStyle);
+        var next = active ? style & ~wsExTransparent : style | wsExTransparent;
+        if (next == style) { _previewDropOverlayActive = active; return; }
+        SetWindowLong(_previewDropOverlay.Handle, gwlExStyle, next);
+        // スタイル変更をヒットテストへ反映させる。
+        SetWindowPos(_previewDropOverlay.Handle, IntPtr.Zero, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0004 | 0x0010 | 0x0020);
+        _previewDropOverlayActive = active;
+    }
+
     private void UpdatePreviewPointerDrag()
     {
+        UpdatePreviewDropOverlay();
         UpdatePreviewSpaceKey();
         UpdatePopupSpaceKey();
         UpdateClipSpaceKey();
@@ -323,8 +424,20 @@ internal sealed partial class MainForm
             // 入力欄にカーソルがあっても、プレビュー側へフォーカスを移す (mpv の子ウィンドウは
             // フォーカスを奪わないため、そのままではカーソルが入力欄に残ってしまう)。
             if (_previewKeyboardActive) _mpvHostPanel.Focus();
+            // 押下がアプリの外で始まった場合は、ファイルのドラッグの可能性がある。
+            _dropDragFromOutside = !IsPointOverAppWindow(pos);
         }
         _previewButtonWasDown = leftDown;
+        // 外部からのドラッグがプレビューの上に来たら、受け付け用の画面を有効にする。
+        if (_dropDragFromOutside && leftDown && _previewDropOverlay is { Visible: true } && _previewDropOverlay.Bounds.Contains(pos))
+        {
+            if (!_previewDropOverlayActive) SetPreviewDropOverlayActive(true);
+        }
+        if (!leftDown)
+        {
+            if (_previewDropOverlayActive) SetPreviewDropOverlayActive(false);
+            _dropDragFromOutside = false;
+        }
         if (_previewPointerState == "ignore")
         {
             if (buttons == MouseButtons.None) _previewPointerState = "idle";
