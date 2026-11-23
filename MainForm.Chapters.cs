@@ -267,6 +267,8 @@ internal sealed partial class MainForm
                 timeLabel.Tag = i;
                 rowPanel.Controls.Add(timeLabel);
                 var nameBox = Theme.MakeTextBox(110, 1, Math.Max(50, rowWidth - 118));
+                nameBox.HandleCreated += (_, _) => ApplyTextBoxMarginsOnce(nameBox, 2, 0);
+                ApplyTextBoxMarginsOnce(nameBox, 2, 0);
                 nameBox.Text = chapter.Name;
                 rowPanel.Controls.Add(nameBox);
                 _chapterRowsPanel.Controls.Add(rowPanel);
