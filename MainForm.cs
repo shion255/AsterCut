@@ -379,9 +379,10 @@ internal sealed partial class MainForm : Form
             return nameLabel;
         }
         MakeSourceRow("ファイル名:", 30, out _sourceFileNameValue);
-        _sourceFileNameValue.Text = "未読み込み";
         _sourceFileNameValue.Font = new Font("Segoe UI", 9f);
-        _sourceToolTip.SetToolTip(_sourceFileNameValue, "未読み込み");
+        // 幅は文字の長さに合わせて付け直すため、右側へのアンカーは外す。
+        _sourceFileNameValue.Anchor = AnchorStyles.Top | AnchorStyles.Left;
+        SetSourceFileNameText("未読み込み");
         MakeSourceRow("ファイルサイズ:", 58, out _sourceFileSizeValue);
         MakeSourceRow("再生時間:", 86, out _sourceDurationValue);
         MakeSourceRow("コンテナ詳細:", 114, out _sourceContainerValue);
@@ -2294,12 +2295,23 @@ internal sealed partial class MainForm : Form
         }
     }
 
+    /// <summary>
+    /// ソースのファイル名を表示し、全文ツールチップを付ける。
+    /// ラベルの幅を文字の長さに合わせ、文字のない範囲ではツールチップが出ないようにする。
+    /// </summary>
+    private void SetSourceFileNameText(string text)
+    {
+        _sourceFileNameValue.Text = text;
+        _sourceToolTip.SetToolTip(_sourceFileNameValue, text);
+        var width = TextRenderer.MeasureText(text, _sourceFileNameValue.Font).Width;
+        _sourceFileNameValue.Width = Math.Clamp(width, 0, 860);
+    }
+
     private void UpdateSourceInfoPanel()
     {
         if (_inputPath.Length == 0 || _probe == null)
         {
-            _sourceFileNameValue.Text = "未読み込み";
-            _sourceToolTip.SetToolTip(_sourceFileNameValue, "未読み込み");
+            SetSourceFileNameText("未読み込み");
             _sourceContainerValue.Text = "—";
             _sourceDurationValue.Text = "—";
             _sourceFileSizeValue.Text = "—";
@@ -2310,8 +2322,7 @@ internal sealed partial class MainForm : Form
         }
 
         var fileName = Path.GetFileName(_inputPath);
-        _sourceFileNameValue.Text = fileName;
-        _sourceToolTip.SetToolTip(_sourceFileNameValue, fileName);
+        SetSourceFileNameText(fileName);
 
         var containerName = _probe.FormatLongName;
         var containerId = _probe.FormatName;
