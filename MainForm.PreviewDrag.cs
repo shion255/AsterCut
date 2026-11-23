@@ -19,6 +19,12 @@ internal sealed partial class MainForm
     private static extern IntPtr GetFocus();
 
     [DllImport("user32.dll")]
+    private static extern IntPtr WindowFromPoint(Point point);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetParent(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
     private static extern bool LockWindowUpdate(IntPtr hWndLock);
 
     private System.Windows.Forms.Timer _previewDragTimer = null!;
@@ -56,6 +62,21 @@ internal sealed partial class MainForm
         if (_tabs.SelectedTab != parentPage) return false;
         var panelRect = panel.RectangleToScreen(panel.ClientRectangle);
         return panelRect.Contains(Control.MousePosition);
+    }
+
+    /// <summary>
+    /// ポインターの下にある一番手前のウィンドウがプレビューの映像 (mpv の子ウィンドウ) かどうか。
+    /// 実行ログのポップアップなど、プレビューの上に重なった別ウィンドウへの押下を
+    /// プレビューへの押下と取り違えないための判定 (範囲の重なりだけでは区別できない)。
+    /// </summary>
+    private bool IsPointerOverPreviewWindow(Point pos)
+    {
+        if (_mpvHostPanel.IsDisposed || !_mpvHostPanel.IsHandleCreated) return false;
+        for (var handle = WindowFromPoint(pos); handle != IntPtr.Zero; handle = GetParent(handle))
+        {
+            if (handle == _mpvHostPanel.Handle) return true;
+        }
+        return false;
     }
 
     /// <summary>
@@ -251,9 +272,9 @@ internal sealed partial class MainForm
             // エクスプローラーからのファイルのドラッグのように、押下がこのウィンドウの外で
             // 始まったものは対象にしない。
             var pressInsideForm = RectangleToScreen(ClientRectangle).Contains(pos);
-            _previewPressMayDrag = pressInsideForm && (Form.ActiveForm != this || TestPreviewPointerTarget());
+            _previewPressMayDrag = pressInsideForm && IsPointerOverPreviewWindow(pos);
             // プレビュー画面をクリックしたら、矢印キーと音量キーの操作対象をプレビューにする。
-            _previewKeyboardActive = pressInsideForm && TestPreviewPointerGeometry();
+            _previewKeyboardActive = pressInsideForm && TestPreviewPointerGeometry() && IsPointerOverPreviewWindow(pos);
             // 入力欄にカーソルがあっても、プレビュー側へフォーカスを移す (mpv の子ウィンドウは
             // フォーカスを奪わないため、そのままではカーソルが入力欄に残ってしまう)。
             if (_previewKeyboardActive) _mpvHostPanel.Focus();
@@ -377,7 +398,8 @@ internal sealed partial class MainForm
         _previewPopupDrag.Update(popup, () =>
             _mpvHostPanel.Visible
             && _mpvHostPanel.Parent == popup
-            && _mpvHostPanel.RectangleToScreen(_mpvHostPanel.ClientRectangle).Contains(Control.MousePosition));
+            && _mpvHostPanel.RectangleToScreen(_mpvHostPanel.ClientRectangle).Contains(Control.MousePosition)
+            && IsPointerOverPreviewWindow(Control.MousePosition));
     }
 
     /// <summary>
