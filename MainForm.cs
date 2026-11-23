@@ -1555,10 +1555,10 @@ internal sealed partial class MainForm : Form
         UpdatePreviewColumnLayout();
     }
 
-    /// <summary>ウィンドウの最小サイズからの増分を、プレビューへ割り当てる量に換算する (横は半分、縦はすべて)。</summary>
+    /// <summary>ウィンドウの最小サイズからの増分を、プレビューへ割り当てる量に換算する (横は7割、縦はすべて)。</summary>
     private (int Width, int Height) GetPreviewColumnExtra()
     {
-        var width = (int)Math.Floor(Math.Max(0, Width - MinimumSize.Width) / 2.0);
+        var width = (int)Math.Floor(Math.Max(0, Width - MinimumSize.Width) * 0.7);
         var height = Math.Max(0, Height - MinimumSize.Height);
         return (width, height);
     }
