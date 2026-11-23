@@ -643,6 +643,14 @@ internal sealed partial class MainForm : Form
         _cutStartBox = Theme.MakeTextBox(585, 15, 145);
         _cutStartBox.Text = "00:00:00.000";
         _cutStartBox.HandleCreated += (_, _) => ApplyTextBoxMarginsOnce(_cutStartBox, 2, 0);
+        _cutStartBox.KeyDown += (_, e) =>
+        {
+            if (e.KeyCode != Keys.Enter) return;
+            e.Handled = true;
+            e.SuppressKeyPress = true;
+            try { SeekPreviewToMs(ConvertTimeToMs(_cutStartBox.Text)); }
+            catch { /* 時刻を解釈できない場合は何もしない */ }
+        };
         _cutTab.Controls.Add(_cutStartBox);
         var setCurrentStartButton = Theme.MakeButton("現在位置を開始に設定", 740, 14, 170, 30);
         setCurrentStartButton.Click += (_, _) =>
@@ -672,6 +680,14 @@ internal sealed partial class MainForm : Form
         _cutEndBox = Theme.MakeTextBox(585, 55, 145);
         _cutEndBox.Text = "00:00:00.000";
         _cutEndBox.HandleCreated += (_, _) => ApplyTextBoxMarginsOnce(_cutEndBox, 2, 0);
+        _cutEndBox.KeyDown += (_, e) =>
+        {
+            if (e.KeyCode != Keys.Enter) return;
+            e.Handled = true;
+            e.SuppressKeyPress = true;
+            try { SeekPreviewToMs(ConvertTimeToMs(_cutEndBox.Text)); }
+            catch { /* 時刻を解釈できない場合は何もしない */ }
+        };
         _cutTab.Controls.Add(_cutEndBox);
         var setCurrentEndButton = Theme.MakeButton("現在位置を終了に設定", 740, 54, 170, 30);
         setCurrentEndButton.Click += (_, _) =>
