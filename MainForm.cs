@@ -642,8 +642,12 @@ internal sealed partial class MainForm : Form
         speedTabToolTip.SetToolTip(rotationLabel, rotationHintText);
 
         // 開始・終了と区間の操作ボタン。
-        _cutTab.Controls.Add(Theme.MakeLabel("開始:", 535, 16, 48, 24));
-        _cutStartBox = Theme.MakeTextBox(585, 15, 145);
+        var cutStartLabel = Theme.MakeLabel("開始:", 520, 16, 48, 24);
+        cutStartLabel.Font = Font;
+        cutStartLabel.Width = cutStartLabel.PreferredWidth;
+        _cutTab.Controls.Add(cutStartLabel);
+        var cutStartBoxX = 520 + cutStartLabel.PreferredWidth + 1;
+        _cutStartBox = Theme.MakeTextBox(cutStartBoxX, 15, 145);
         _cutStartBox.Text = "00:00:00.000";
         _cutStartBox.HandleCreated += (_, _) => ApplyTextBoxMarginsOnce(_cutStartBox, 2, 0);
         _cutStartBox.KeyDown += (_, e) =>
@@ -655,7 +659,7 @@ internal sealed partial class MainForm : Form
             catch { /* 時刻を解釈できない場合は何もしない */ }
         };
         _cutTab.Controls.Add(_cutStartBox);
-        var setCurrentStartButton = Theme.MakeButton("現在位置を開始に設定", 740, 14, 170, 30);
+        var setCurrentStartButton = Theme.MakeButton("現在位置を開始に設定", cutStartBoxX + 155, 14, 170, 30);
         setCurrentStartButton.Click += (_, _) =>
         {
             if (_previewReady)
@@ -672,15 +676,19 @@ internal sealed partial class MainForm : Form
         _cutTab.Controls.Add(setCurrentStartButton);
         // 「この位置にシーク」の幅は、文字の実測幅に余白を加えて決める。
         var seekButtonWidth = TextRenderer.MeasureText("この位置にシーク", Font, new Size(10000, 100), TextFormatFlags.NoPadding).Width + 28;
-        var seekToStartButton = Theme.MakeButton("この位置にシーク", 918, 14, seekButtonWidth, 30);
+        var seekToStartButton = Theme.MakeButton("この位置にシーク", cutStartBoxX + 333, 14, seekButtonWidth, 30);
         seekToStartButton.Click += (_, _) =>
         {
             try { SeekPreviewToMs(ConvertTimeToMs(_cutStartBox.Text)); }
             catch { /* 時刻を解釈できない場合は何もしない */ }
         };
         _cutTab.Controls.Add(seekToStartButton);
-        _cutTab.Controls.Add(Theme.MakeLabel("終了:", 535, 56, 48, 24));
-        _cutEndBox = Theme.MakeTextBox(585, 55, 145);
+        var cutEndLabel = Theme.MakeLabel("終了:", 520, 56, 48, 24);
+        cutEndLabel.Font = Font;
+        cutEndLabel.Width = cutEndLabel.PreferredWidth;
+        _cutTab.Controls.Add(cutEndLabel);
+        var cutEndBoxX = 520 + cutEndLabel.PreferredWidth + 1;
+        _cutEndBox = Theme.MakeTextBox(cutEndBoxX, 55, 145);
         _cutEndBox.Text = "00:00:00.000";
         _cutEndBox.HandleCreated += (_, _) => ApplyTextBoxMarginsOnce(_cutEndBox, 2, 0);
         _cutEndBox.KeyDown += (_, e) =>
@@ -692,7 +700,7 @@ internal sealed partial class MainForm : Form
             catch { /* 時刻を解釈できない場合は何もしない */ }
         };
         _cutTab.Controls.Add(_cutEndBox);
-        var setCurrentEndButton = Theme.MakeButton("現在位置を終了に設定", 740, 54, 170, 30);
+        var setCurrentEndButton = Theme.MakeButton("現在位置を終了に設定", cutEndBoxX + 155, 54, 170, 30);
         setCurrentEndButton.Click += (_, _) =>
         {
             if (_previewReady)
@@ -707,7 +715,7 @@ internal sealed partial class MainForm : Form
             }
         };
         _cutTab.Controls.Add(setCurrentEndButton);
-        var seekToEndButton = Theme.MakeButton("この位置にシーク", 918, 54, seekButtonWidth, 30);
+        var seekToEndButton = Theme.MakeButton("この位置にシーク", cutEndBoxX + 333, 54, seekButtonWidth, 30);
         seekToEndButton.Click += (_, _) =>
         {
             try { SeekPreviewToMs(ConvertTimeToMs(_cutEndBox.Text)); }
