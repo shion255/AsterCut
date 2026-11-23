@@ -7,7 +7,7 @@ namespace AsterCut;
 
 /// <summary>
 /// プレビューのドラッグでメインウィンドウを移動し、
-/// ダブルクリックで映像が約 1.25 倍になるよう拡大 / 復元する。
+/// ダブルクリックで、黒帯がすべてなくなる大きさへそろえる (作業領域の幅の約70%と約50%を交互に繰り返す)。
 /// 映像部分は mpv の子ウィンドウ (別プロセス) のため、マウス入力はポーリングで拾う。
 /// </summary>
 internal sealed partial class MainForm
@@ -81,7 +81,7 @@ internal sealed partial class MainForm
     private bool _previewPressMayDrag;
     private long _previewLastClickTicks;
     private Point _previewLastClickPos;
-    private Size? _previewZoomRestoreSize;
+    private bool _previewZoomAt70;
     private IntPtr _previewWheelHook;
     private PreviewWheelHookProc? _previewWheelHookProc;
     private int _previewWheelPendingDelta;
@@ -751,12 +751,8 @@ internal sealed partial class MainForm
 
     private void TogglePreviewZoom()
     {
-        if (_previewZoomRestoreSize is { } restoreSize)
-        {
-            SetFormSizeWithoutFlash(restoreSize);
-            _previewZoomRestoreSize = null;
-            return;
-        }
+        // ダブルクリックのたびに、約70%と約50%を交互にそろえる (元の大きさへは戻らない)。
+        var to50 = _previewZoomAt70;
         int newFormW;
         int newFormH;
         try
@@ -777,24 +773,43 @@ internal sealed partial class MainForm
             }
             var rotation = GetPreviewRotationClockwise();
             if (rotation is 90 or 270) (videoW, videoH) = (videoH, videoW);
-            var panel = _mpvHostPanel;
-            var fitScale = Math.Min((double)panel.Width / videoW, (double)panel.Height / videoH);
-            var targetPanelW = (int)Math.Round(videoW * fitScale * 1.25);
-            var targetPanelH = (int)Math.Round(videoH * fitScale * 1.25);
-            // プレビュー列のレイアウト規則 (横の増分の半分がパネル、縦の増分はすべてパネル) から逆算する。
-            newFormW = MinimumSize.Width + 2 * (targetPanelW - 508);
-            newFormH = MinimumSize.Height + (targetPanelH - 282);
+            var workingArea = Screen.FromControl(this).WorkingArea;
+            // プレビュー列の横の増分は、レイアウトの規則 (GetPreviewColumnExtra) と同じ式で
+            // ウィンドウ幅から逆算する。ページのクライアント幅とウィンドウ幅の差は、
+            // サイズ変更の前後で変わらないものとして、現在の値を使う。
+            var page = _tabs.SelectedTab == _chapterTab ? _chapterTab : _cutTab;
+            var widthOffset = Width - page.ClientSize.Width;
+            int ExtraWidthForFormWidth(int formWidth)
+            {
+                var growth = Math.Max(0, formWidth - MinimumSize.Width);
+                var width = (int)Math.Floor(growth * 0.7);
+                width = Math.Max(width, formWidth - widthOffset - 520 - 10 - MaxSegmentGroupWidth);
+                return width;
+            }
+            // 黒帯が上下左右すべてなくなるよう、映像のアスペクト比のまま、
+            // モニタの作業領域に対して中くらいのウィンドウサイズへそろえる。
+            var targetFormW = (int)Math.Round(workingArea.Width * (to50 ? 0.50 : 0.70));
+            var scale = Math.Min((508 + ExtraWidthForFormWidth(targetFormW)) / (double)videoW,
+                                 (282 + Math.Max(0, workingArea.Height - MinimumSize.Height)) / (double)videoH);
+            var targetPanelWi = (int)Math.Round(videoW * scale);
+            var targetPanelHi = (int)Math.Round(videoH * scale);
+            var extraW = targetPanelWi - 508;
+            var formW1 = MinimumSize.Width + (int)Math.Ceiling(extraW / 0.7);
+            var formW2 = widthOffset + 520 + 10 + MaxSegmentGroupWidth + extraW;
+            newFormW = Math.Min(formW1, formW2);
+            newFormH = MinimumSize.Height + (targetPanelHi - 282);
         }
         catch
         {
-            // 映像の大きさが分からない場合は、ウィンドウ自体を一律に拡大する。
-            newFormW = (int)Math.Round(Width * 1.25);
-            newFormH = (int)Math.Round(Height * 1.25);
+            // 映像の大きさが分からない場合は、ウィンドウ自体を一律に広げる / 狭める。
+            var factor = to50 ? 0.8 : 1.25;
+            newFormW = (int)Math.Round(Width * factor);
+            newFormH = (int)Math.Round(Height * factor);
         }
-        var workingArea = Screen.FromControl(this).WorkingArea;
-        newFormW = Math.Max(MinimumSize.Width, Math.Min(newFormW, workingArea.Width));
-        newFormH = Math.Max(MinimumSize.Height, Math.Min(newFormH, workingArea.Height));
-        _previewZoomRestoreSize = Size;
+        var clampArea = Screen.FromControl(this).WorkingArea;
+        newFormW = Math.Max(MinimumSize.Width, Math.Min(newFormW, clampArea.Width));
+        newFormH = Math.Max(MinimumSize.Height, Math.Min(newFormH, clampArea.Height));
+        _previewZoomAt70 = !to50;
         SetFormSizeWithoutFlash(new Size(newFormW, newFormH));
     }
 }
