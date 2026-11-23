@@ -26,6 +26,12 @@ internal sealed partial class MainForm
     private NumericUpDown? _clipBottomBox;
     private NumericUpDown? _clipLeftBox;
     private Label? _clipResolutionLabel;
+    private Button? _clipResetButton;
+    private Button? _clipOverwriteSaveButton;
+    private Label? _clipNoteLabel;
+    private Label? _clipPixelNoteLabel;
+    private Segment? _clipEditSegment;
+    private Segment? _clipEditOriginal;
     private bool _clipPreviewSeeking;
     private bool _clipUpdatingControls;
     private bool _clipMouseDragging;
@@ -94,6 +100,14 @@ internal sealed partial class MainForm
     /// <summary>クリッピング付き区間をダブルクリックしたときに、その値をクリッピング画面へ読み込む。</summary>
     private void LoadSegmentClippingToEditor(Segment segment)
     {
+        _clipEditSegment = segment;
+        _clipEditOriginal = new Segment
+        {
+            Top = segment.Top,
+            Right = segment.Right,
+            Bottom = segment.Bottom,
+            Left = segment.Left,
+        };
         var values = new Segment
         {
             Top = segment.Top,
@@ -111,6 +125,71 @@ internal sealed partial class MainForm
             _clipCurrent = values;
             ShowClippingForm(values);
         }
+        ApplyClipEditMode();
+    }
+
+    /// <summary>区間から開いたかどうかで、クリッピング画面のボタンの表示を切り替える。</summary>
+    private void ApplyClipEditMode()
+    {
+        var editing = _clipEditSegment != null;
+        if (_clipResetButton is { IsDisposed: false })
+        {
+            _clipResetButton.Text = editing ? "区間登録時に戻す" : "クリッピングをリセット";
+        }
+        if (_clipOverwriteSaveButton is { IsDisposed: false })
+        {
+            _clipOverwriteSaveButton.Visible = editing;
+        }
+        if (_clipNoteLabel is { IsDisposed: false }) _clipNoteLabel.Top = editing ? 532 : 490;
+        if (_clipPixelNoteLabel is { IsDisposed: false }) _clipPixelNoteLabel.Top = editing ? 574 : 532;
+    }
+
+    /// <summary>クリッピング画面の現在の値を、編集対象の区間へ上書きして保存する。</summary>
+    private void SaveClipValuesToSegment()
+    {
+        if (_clipEditSegment == null) return;
+        var index = _segments.IndexOf(_clipEditSegment);
+        if (index < 0)
+        {
+            MessageBox.Show("対象の区間が見つかりませんでした。", AppTitle, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            _clipEditSegment = null;
+            _clipEditOriginal = null;
+            ApplyClipEditMode();
+            return;
+        }
+        var values = GetCurrentClipValues();
+        try
+        {
+            _ = GetSegmentCropFilter(new Segment
+            {
+                Top = values.Top,
+                Right = values.Right,
+                Bottom = values.Bottom,
+                Left = values.Left,
+            });
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(ex.Message, AppTitle, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+        PushSegmentUndoSnapshot("クリッピングの上書き保存");
+        _clipEditSegment.Top = values.Top;
+        _clipEditSegment.Right = values.Right;
+        _clipEditSegment.Bottom = values.Bottom;
+        _clipEditSegment.Left = values.Left;
+        _clipEditOriginal = new Segment
+        {
+            Top = values.Top,
+            Right = values.Right,
+            Bottom = values.Bottom,
+            Left = values.Left,
+        };
+        RefreshSegmentList();
+        _segmentList.SelectedIndex = index;
+        UpdateCutOutputName();
+        WriteLog($"区間 {index + 1} のクリッピングを上書き保存: 上 {values.Top} 右 {values.Right} 下 {values.Bottom} 左 {values.Left}");
+        if (_clipForm is { IsDisposed: false }) _clipForm.Close();
     }
 
     private void UpdateClipResolutionLabel()
@@ -411,8 +490,19 @@ internal sealed partial class MainForm
             {
                 SetClipBoxValues(initialClipValues.Top, initialClipValues.Right, initialClipValues.Bottom, initialClipValues.Left);
             }
+            else
+            {
+                _clipEditSegment = null;
+                _clipEditOriginal = null;
+            }
+            ApplyClipEditMode();
             _clipForm.Activate();
             return;
+        }
+        if (initialClipValues == null)
+        {
+            _clipEditSegment = null;
+            _clipEditOriginal = null;
         }
 
         if (initialClipValues != null)
@@ -545,7 +635,12 @@ internal sealed partial class MainForm
         settings.Controls.Add(leftBox);
         var resetButton = Theme.MakeButton("クリッピングをリセット", 14, 440, 220, 34);
         settings.Controls.Add(resetButton);
-        settings.Controls.Add(Theme.MakeLabel("クリッピング範囲外は黒帯で隠して表示します。", 14, 490, 240, 38));
+        var overwriteSaveButton = Theme.MakeButton("上書きして保存", 14, 482, 220, 34);
+        overwriteSaveButton.BackColor = Theme.Accent;
+        overwriteSaveButton.Visible = false;
+        settings.Controls.Add(overwriteSaveButton);
+        var noteLabel = Theme.MakeLabel("クリッピング範囲外は黒帯で隠して表示します。", 14, 490, 240, 38);
+        settings.Controls.Add(noteLabel);
         var pixelUnitNote = Theme.MakeLabel("※ 数値は元動画のピクセル単位です。", 14, 532, 240, 42);
         pixelUnitNote.AutoSize = false;
         settings.Controls.Add(pixelUnitNote);
@@ -562,12 +657,17 @@ internal sealed partial class MainForm
         _clipBottomBox = bottomBox;
         _clipLeftBox = leftBox;
         _clipResolutionLabel = resolutionLabel;
+        _clipResetButton = resetButton;
+        _clipOverwriteSaveButton = overwriteSaveButton;
+        _clipNoteLabel = noteLabel;
+        _clipPixelNoteLabel = pixelUnitNote;
         _clipPreviewSeeking = false;
         _clipMpvRect = null;
         _clipMpvRectPanelSize = Size.Empty;
         _clipSavedVolume = GetPlayerVolume();
         SetPlayerVolume(0.0);
         SetClipBoxValues(_clipCurrent.Top, _clipCurrent.Right, _clipCurrent.Bottom, _clipCurrent.Left);
+        ApplyClipEditMode();
 
         overlay.Paint += (_, e) =>
         {
@@ -672,7 +772,18 @@ internal sealed partial class MainForm
         // 入力検証の音が止まらなかったため、メッセージの段階で受け取るフィルターを付ける。
         _clipBoxKeyFilter = new ClipBoxKeyFilter(this, new Control[] { topBox, rightBox, bottomBox, leftBox });
         Application.AddMessageFilter(_clipBoxKeyFilter);
-        resetButton.Click += (_, _) => SetClipBoxValues(0, 0, 0, 0);
+        resetButton.Click += (_, _) =>
+        {
+            if (_clipEditOriginal != null)
+            {
+                SetClipBoxValues(_clipEditOriginal.Top, _clipEditOriginal.Right, _clipEditOriginal.Bottom, _clipEditOriginal.Left);
+            }
+            else
+            {
+                SetClipBoxValues(0, 0, 0, 0);
+            }
+        };
+        overwriteSaveButton.Click += (_, _) => SaveClipValuesToSegment();
 
         clipSeek.MouseDown += (_, _) => { if (_previewReady) { _previewSeeking = false; _popupPreviewSeeking = false; _clipPreviewSeeking = true; } };
         clipSeek.MouseUp += (_, _) =>
@@ -728,6 +839,12 @@ internal sealed partial class MainForm
             _clipBottomBox = null;
             _clipLeftBox = null;
             _clipResolutionLabel = null;
+            _clipResetButton = null;
+            _clipOverwriteSaveButton = null;
+            _clipNoteLabel = null;
+            _clipPixelNoteLabel = null;
+            _clipEditSegment = null;
+            _clipEditOriginal = null;
             _clipPreviewSeeking = false;
             _clipMouseDragging = false;
             _clipDragStart = null;
