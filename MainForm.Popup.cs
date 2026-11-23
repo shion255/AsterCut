@@ -247,7 +247,13 @@ internal sealed partial class MainForm
         popupSeekEnd.Click += (_, _) => MovePreviewToBoundary(true);
         popup.KeyDown += (_, e) =>
         {
-            if (e.KeyCode == Keys.Escape)
+            if (e.KeyCode == Keys.Space)
+            {
+                e.Handled = true;
+                e.SuppressKeyPress = true;
+                TogglePreviewPlaybackFromSpace();
+            }
+            else if (e.KeyCode == Keys.Escape)
             {
                 e.Handled = true;
                 e.SuppressKeyPress = true;
@@ -418,7 +424,7 @@ internal sealed partial class MainForm
         {
             if (e.KeyCode == Keys.Space)
             {
-                TogglePreviewPlayback();
+                TogglePreviewPlaybackFromSpace();
                 e.Handled = true;
                 e.SuppressKeyPress = true;
             }

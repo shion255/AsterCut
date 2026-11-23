@@ -14,6 +14,7 @@ internal sealed partial class MainForm
 {
     private Segment _clipCurrent = new();
     private Form? _clipForm;
+    private ClipBoxKeyFilter? _clipBoxKeyFilter;
     private Panel? _clipVideoPanel;
     private TransparentOverlayForm? _clipOverlay;
     private Panel? _clipPreviewPanel;
@@ -355,6 +356,47 @@ internal sealed partial class MainForm
     // クリッピング画面
     // ------------------------------------------------------------------
 
+    // クリッピング画面の数値ボックス宛てのスペースキーを、ボックスへ届く前に受け取るフィルター。
+    // 日本語入力のときは IME 経由でキーや文字が届くため、そちらのメッセージも受ける。
+    private sealed class ClipBoxKeyFilter : IMessageFilter
+    {
+        private const int WmKeyDown = 0x0100;
+        private const int WmChar = 0x0102;
+        private const int WmImeKeyDown = 0x0290;
+        private const int WmImeChar = 0x0286;
+        private readonly MainForm _form;
+        private readonly Control[] _boxes;
+
+        public ClipBoxKeyFilter(MainForm form, Control[] boxes)
+        {
+            _form = form;
+            _boxes = boxes;
+        }
+
+        public bool PreFilterMessage(ref Message m)
+        {
+            if (_form.IsDisposed) return false;
+            var isSpaceKey = (m.Msg == WmKeyDown || m.Msg == WmImeKeyDown) && m.WParam == (IntPtr)Keys.Space;
+            var isSpaceChar = (m.Msg == WmChar || m.Msg == WmImeChar) && (m.WParam == (IntPtr)Keys.Space || m.WParam == (IntPtr)0x3000);
+            if (!isSpaceKey && !isSpaceChar) return false;
+            if (!IsForBoxes(m.HWnd)) return false;
+            if (isSpaceKey) _form.TogglePreviewPlaybackFromSpace();
+            return true;
+        }
+
+        private bool IsForBoxes(IntPtr hwnd)
+        {
+            for (var handle = hwnd; handle != IntPtr.Zero; handle = GetParent(handle))
+            {
+                foreach (var box in _boxes)
+                {
+                    if (handle == box.Handle) return true;
+                }
+            }
+            return false;
+        }
+    }
+
     private void ShowClippingForm(Segment? initialClipValues = null)
     {
         if (_previewPopupForm is { IsDisposed: false }) _previewPopupForm.Close();
@@ -604,10 +646,32 @@ internal sealed partial class MainForm
                 overlay.Cursor = Cursors.Default;
             }
         };
+        overlay.KeyDown += (_, e) =>
+        {
+            if (e.KeyCode == Keys.Space)
+            {
+                e.Handled = true;
+                e.SuppressKeyPress = true;
+                TogglePreviewPlaybackFromSpace();
+            }
+            else if (e.KeyCode == Keys.Escape)
+            {
+                e.Handled = true;
+                e.SuppressKeyPress = true;
+                clipForm.Close();
+            }
+        };
         foreach (var box in new[] { topBox, rightBox, bottomBox, leftBox })
         {
             box.ValueChanged += (_, _) => UpdateClipValuesFromInputs();
+            // 数値だけを入れる欄なので IME は無効にする (日本語入力のままだと、スペースが
+            // IME 経由の文字として届き、キーイベントやメッセージでは止められず音が鳴るため)。
+            box.ImeMode = ImeMode.Disable;
         }
+        // 数値ボックス宛てのスペースキーは、ボックスやフォームのキーイベントで抑えても
+        // 入力検証の音が止まらなかったため、メッセージの段階で受け取るフィルターを付ける。
+        _clipBoxKeyFilter = new ClipBoxKeyFilter(this, new Control[] { topBox, rightBox, bottomBox, leftBox });
+        Application.AddMessageFilter(_clipBoxKeyFilter);
         resetButton.Click += (_, _) => SetClipBoxValues(0, 0, 0, 0);
 
         clipSeek.MouseDown += (_, _) => { if (_previewReady) { _previewSeeking = false; _popupPreviewSeeking = false; _clipPreviewSeeking = true; } };
@@ -647,6 +711,11 @@ internal sealed partial class MainForm
             }
             catch { }
             try { SetPlayerVolume(_clipSavedVolume); } catch { }
+            if (_clipBoxKeyFilter != null)
+            {
+                Application.RemoveMessageFilter(_clipBoxKeyFilter);
+                _clipBoxKeyFilter = null;
+            }
             _clipForm = null;
             _clipVideoPanel = null;
             _clipOverlay = null;
@@ -666,7 +735,7 @@ internal sealed partial class MainForm
             _clipMpvRect = null;
             _clipMpvRectPanelSize = Size.Empty;
         };
-        // Esc キーで閉じる。
+        // Esc キーで閉じる。スペースキーで再生 / 一時停止する。
         clipForm.KeyDown += (sender, e) =>
         {
             if (e.KeyCode == Keys.Escape)
@@ -674,6 +743,12 @@ internal sealed partial class MainForm
                 e.Handled = true;
                 e.SuppressKeyPress = true;
                 ((Form)sender!).Close();
+            }
+            else if (e.KeyCode == Keys.Space)
+            {
+                e.Handled = true;
+                e.SuppressKeyPress = true;
+                TogglePreviewPlaybackFromSpace();
             }
         };
         clipForm.Shown += (_, _) =>

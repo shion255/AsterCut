@@ -132,6 +132,20 @@ internal sealed partial class MainForm
         SendSegmentPopupMpvCommand(new object[] { "set_property", "pause", !_segmentPopupPlaying });
     }
 
+    private long _lastSegmentPopupSpaceToggleTicks;
+
+    /// <summary>
+    /// スペースキー経路 (フォームのキーイベントとポーリング) からの再生 / 一時停止。
+    /// 同じ押下が両経路で二重に切り替わらないよう、直前の切り替えから間もないものは無視する。
+    /// </summary>
+    private void ToggleSegmentPopupPlaybackFromSpace()
+    {
+        var now = Environment.TickCount64;
+        if (now - _lastSegmentPopupSpaceToggleTicks < 100) return;
+        _lastSegmentPopupSpaceToggleTicks = now;
+        ToggleSegmentPopupPlayback();
+    }
+
     /// <summary>区間ポップアップ専用 mpv の time-pos を受け取る読み取り処理。</summary>
     private void RunSegmentPopupReader(string pipeName, SegmentPopupMpvState state, CancellationToken token)
     {
@@ -279,7 +293,7 @@ internal sealed partial class MainForm
         {
             switch (e.KeyCode)
             {
-                case Keys.Space: ToggleSegmentPopupPlayback(); break;
+                case Keys.Space: ToggleSegmentPopupPlaybackFromSpace(); break;
                 case Keys.Enter: if (_segmentPopupIndex >= 0) ShowSegmentPreviewPopup(_segmentPopupIndex); break;
                 case Keys.Escape: ((Form)sender!).Close(); break;
                 case Keys.Left: SeekSegmentPopupToMs(GetSegmentPopupPositionMs() - 5000); break;

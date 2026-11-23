@@ -225,6 +225,49 @@ internal sealed partial class MainForm
         TogglePreviewPlaybackFromSpace();
     }
 
+    private bool _popupSpaceKeyWasDown;
+    private bool _clipSpaceKeyWasDown;
+
+    /// <summary>
+    /// ポップアップ (動画プレビュー / 区間プレビュー / 回転プレビュー) でのスペースキーによる
+    /// 再生 / 一時停止をポーリングで拾う。ポップアップの映像をクリックした後は mpv の子ウィンドウに
+    /// フォーカスがあり、フォームのキーイベントが届かないため、本体と同じ方式にする。
+    /// フォームにフォーカスがある場合はキーイベント側と二重にならないよう、切り替え側の間隔ガードで抑える。
+    /// </summary>
+    private void UpdatePopupSpaceKey()
+    {
+        var down = (GetAsyncKeyState(0x20) & 0x8000) != 0;
+        var pressed = down && !_popupSpaceKeyWasDown;
+        _popupSpaceKeyWasDown = down;
+        if (!pressed) return;
+        if (_previewPopupForm is { IsDisposed: false } && Form.ActiveForm == _previewPopupForm)
+        {
+            TogglePreviewPlaybackFromSpace();
+        }
+        else if (_segmentPopupForm is { IsDisposed: false } && Form.ActiveForm == _segmentPopupForm)
+        {
+            ToggleSegmentPopupPlaybackFromSpace();
+        }
+    }
+
+    /// <summary>
+    /// クリッピング画面でのスペースキーによる再生 / 一時停止をポーリングで拾う。
+    /// クリッピングした範囲の外 (黒帯) をクリックした後は、映像の上に重ねた透過フォームや
+    /// mpv の子ウィンドウにフォーカスがあり、フォームのキーイベントが届かないため、
+    /// ポップアップと同じ方式にする。
+    /// </summary>
+    private void UpdateClipSpaceKey()
+    {
+        var down = (GetAsyncKeyState(0x20) & 0x8000) != 0;
+        var pressed = down && !_clipSpaceKeyWasDown;
+        _clipSpaceKeyWasDown = down;
+        if (!pressed) return;
+        if (_clipForm is not { IsDisposed: false }) return;
+        var active = Form.ActiveForm;
+        if (active != _clipForm && active != _clipOverlay) return;
+        TogglePreviewPlaybackFromSpace();
+    }
+
     /// <summary>
     /// プレビュー画面をクリックした後の ← / → (1 フレーム移動) と ↑ / ↓ (5 フレーム移動) をポーリングで拾う。
     /// キー入力は mpv の子ウィンドウに届いて自ウィンドウに来ないため、スペースキーと同じ方式にする。
@@ -262,6 +305,8 @@ internal sealed partial class MainForm
     private void UpdatePreviewPointerDrag()
     {
         UpdatePreviewSpaceKey();
+        UpdatePopupSpaceKey();
+        UpdateClipSpaceKey();
         UpdatePreviewArrowKeys();
         var buttons = Control.MouseButtons;
         var pos = Control.MousePosition;
