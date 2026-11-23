@@ -78,6 +78,80 @@ internal sealed class ThemedCheckedListBox : CheckedListBox
     }
 }
 
+/// <summary>
+/// 音量の数字表示。数字を明るい紫苑色で大きく、% を小さく描く。
+/// </summary>
+internal class VolumeValueLabel : Control
+{
+    private Font? _numberFont;
+    private Font? _percentFont;
+
+    public VolumeValueLabel()
+    {
+        TabStop = false;
+        SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint |
+                 ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+    }
+
+    public override string Text
+    {
+        get => base.Text;
+        set
+        {
+            if (base.Text == value) return;
+            base.Text = value;
+            Invalidate();
+        }
+    }
+
+    protected override void OnFontChanged(EventArgs e)
+    {
+        base.OnFontChanged(e);
+        _numberFont?.Dispose();
+        _percentFont?.Dispose();
+        _numberFont = new Font(Font.FontFamily, 12f);
+        _percentFont = new Font(Font.FontFamily, 8f);
+        Invalidate();
+    }
+
+    private Color ResolveBackColor()
+    {
+        Control? c = Parent;
+        while (c != null)
+        {
+            if (c.BackColor.A == 255) return c.BackColor;
+            c = c.Parent;
+        }
+        return SystemColors.Control;
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        var g = e.Graphics;
+        g.Clear(ResolveBackColor());
+        if (_numberFont == null || _percentFont == null)
+        {
+            _numberFont = new Font(Font.FontFamily, 12f);
+            _percentFont = new Font(Font.FontFamily, 8f);
+        }
+        var text = Text;
+        var hasPercent = text.EndsWith("%");
+        var number = hasPercent ? text[..^1] : text;
+        using var brush = new SolidBrush(Color.FromArgb(150, 128, 205));
+        const TextFormatFlags flags = TextFormatFlags.SingleLine | TextFormatFlags.NoPadding;
+        var numberSize = TextRenderer.MeasureText(g, number, _numberFont, ClientSize, flags);
+        var bottom = (ClientSize.Height + numberSize.Height) / 2;
+        TextRenderer.DrawText(g, number, _numberFont, new Rectangle(0, bottom - numberSize.Height, numberSize.Width, numberSize.Height), Color.FromArgb(150, 128, 205), flags);
+        if (hasPercent)
+        {
+            var percentSize = TextRenderer.MeasureText(g, "%", _percentFont, ClientSize, flags);
+            // % は数字の下端より 1px 上に置く。描く範囲は右端まで広げ、字形が範囲で切れないようにする。
+            var percentX = numberSize.Width + 2;
+            TextRenderer.DrawText(g, "%", _percentFont, new Rectangle(percentX, bottom - percentSize.Height - 1, ClientSize.Width - percentX, percentSize.Height), Color.FromArgb(150, 128, 205), flags);
+        }
+    }
+}
+
 internal class SeekTrackBar : Control
 {
     private bool _manualDragging;
@@ -142,6 +216,20 @@ internal class SeekTrackBar : Control
     public int LargeChange { get; set; } = 5;
 
     public int TickFrequency { get; set; } = 10;
+
+    /// <summary>
+    /// 音量バー用に、右へ行くほど高くなる棒グラフで表示するかどうか。
+    /// シークバーと見分けられるよう、音量バーだけ true にする。
+    /// </summary>
+    public bool BarGraphStyle { get; set; }
+
+    private const int BarCount = 20;
+    private const int BarWidth = 7;
+    private const int BarGap = 4;
+
+    private int BarGraphTotalWidth => BarCount * BarWidth + (BarCount - 1) * BarGap;
+
+    private int BarGraphStartX => Math.Max(0, (ClientSize.Width - BarGraphTotalWidth) / 2);
 
     // 矢印キーなどは、入力キーとして扱わないとフォーカス移動に使われてしまい、キー操作を受け取れない。
     protected override bool IsInputKey(Keys keyData)
@@ -256,6 +344,7 @@ internal class SeekTrackBar : Control
 
     private bool IsOverThumb(int x, int y)
     {
+        if (BarGraphStyle) return ClientRectangle.Contains(x, y);
         var r = GetThumbRect();
         r.Inflate(3, 3);
         return r.Contains(x, y);
@@ -299,6 +388,11 @@ internal class SeekTrackBar : Control
         g.Clear(ResolveBackColor());
         g.SmoothingMode = SmoothingMode.AntiAlias;
         var enabled = Enabled;
+        if (BarGraphStyle)
+        {
+            PaintBarGraph(g, enabled);
+            return;
+        }
         var cy = ClientSize.Height / 2;
         var channel = new Rectangle(TrackMargin, cy - 2, Math.Max(1, ClientSize.Width - TrackMargin * 2), 4);
         using (var channelBrush = new SolidBrush(enabled ? Color.FromArgb(104, 98, 120) : Color.FromArgb(66, 62, 78)))
@@ -314,6 +408,39 @@ internal class SeekTrackBar : Control
         using var borderPen = new Pen(border, 1.0f);
         g.FillPath(thumbBrush, path);
         g.DrawPath(borderPen, path);
+    }
+
+    private void PaintBarGraph(Graphics g, bool enabled)
+    {
+        var range = (double)(Maximum - Minimum);
+        var fraction = range > 0 ? (double)(Value - Minimum) / range : 0.0;
+        var litCount = (int)Math.Round(BarCount * fraction);
+        var baseY = ClientSize.Height - 5;
+        for (var i = 0; i < BarCount; i++)
+        {
+            var height = (int)Math.Round(6 + 20.0 * i / (BarCount - 1));
+            var rect = new Rectangle(BarGraphStartX + i * (BarWidth + BarGap), baseY - height, BarWidth, height);
+            var lit = i < litCount;
+            Color color;
+            if (!enabled)
+            {
+                color = lit ? Color.FromArgb(88, 84, 100) : Color.FromArgb(48, 46, 58);
+            }
+            else if (lit)
+            {
+                var last = i == litCount - 1;
+                color = _hot
+                    ? (last ? Color.FromArgb(178, 158, 224) : Color.FromArgb(150, 128, 205))
+                    : (last ? Color.FromArgb(150, 128, 205) : Color.FromArgb(125, 105, 168));
+            }
+            else
+            {
+                color = Color.FromArgb(62, 59, 74);
+            }
+            using var path = RoundedRect(rect, 2);
+            using var brush = new SolidBrush(color);
+            g.FillPath(brush, path);
+        }
     }
 
     protected override void OnMouseDown(MouseEventArgs e)
@@ -370,8 +497,9 @@ internal class SeekTrackBar : Control
 
     private void SetFromMouseX(int x)
     {
-        var travel = Math.Max(1, ClientSize.Width - TrackMargin * 2);
-        var fraction = Math.Max(0.0, Math.Min(1.0, (double)(x - TrackMargin) / travel));
+        var travel = Math.Max(1, BarGraphStyle ? BarGraphTotalWidth : ClientSize.Width - TrackMargin * 2);
+        var startX = BarGraphStyle ? BarGraphStartX : TrackMargin;
+        var fraction = Math.Max(0.0, Math.Min(1.0, (double)(x - startX) / travel));
         var next = Minimum + (int)Math.Round(fraction * (Maximum - Minimum));
         next = Math.Max(Minimum, Math.Min(Maximum, next));
         if (next != Value)

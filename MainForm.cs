@@ -54,7 +54,7 @@ internal sealed partial class MainForm : Form
     private readonly SeekTrackBar _seekTrackBar;
     private readonly VolumeIconButton _volumeMuteButton;
     private readonly SeekTrackBar _volumeTrackBar;
-    private readonly Label _volumeValueLabel;
+    private readonly VolumeValueLabel _volumeValueLabel;
     private readonly SeekIconButton _seekStartButton;
     private readonly SeekIconButton _frameBackButton;
     private readonly SeekIconButton _frameForwardButton;
@@ -533,6 +533,7 @@ internal sealed partial class MainForm : Form
         _cutTab.Controls.Add(_volumeMuteButton);
         _volumeTrackBar = new SeekTrackBar
         {
+            BarGraphStyle = true,
             Minimum = 0,
             Maximum = 100,
             TickFrequency = 25,
@@ -547,7 +548,12 @@ internal sealed partial class MainForm : Form
         _volumeTrackBar.MouseUp += (_, _) => SaveSettingsFromUi();
         _volumeTrackBar.KeyUp += (_, _) => SaveSettingsFromUi();
         _cutTab.Controls.Add(_volumeTrackBar);
-        _volumeValueLabel = Theme.MakeLabel("80%", 323, 399, 50, 24);
+        _volumeValueLabel = new VolumeValueLabel
+        {
+            Text = "80%",
+            Location = new Point(323, 399),
+            Size = new Size(72, 24),
+        };
         _cutTab.Controls.Add(_volumeValueLabel);
         // 音量の初期値は設定から取る。
         _volumeSliderValue = _settings.VolumeSliderValue;
