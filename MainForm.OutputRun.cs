@@ -1498,37 +1498,61 @@ internal sealed partial class MainForm
             var description = "";
             if (videoReencoded)
             {
-                var filterParts = new List<string>();
-                var videoLabels = new List<string>();
-                var audioLabels = new List<string>();
-
-                // 速度変更時は全映像ストリームを setpts で縮尺する。
-                for (var videoOrdinal = 0; videoOrdinal < _videoStreams.Count; videoOrdinal++)
+                if (speedChanged)
                 {
-                    var videoLabel = $"vout{videoOrdinal}";
-                    var videoStreamIndex = _videoStreams[videoOrdinal].Index;
-                    filterParts.Add($"[0:{videoStreamIndex}]setpts=(PTS-STARTPTS)/{speedInvariant}[{videoLabel}]");
-                    videoLabels.Add($"[{videoLabel}]");
-                }
+                    var filterParts = new List<string>();
+                    var videoLabels = new List<string>();
+                    var audioLabels = new List<string>();
 
-                for (var audioOrdinal = 0; audioOrdinal < selectedAudios.Count; audioOrdinal++)
-                {
-                    var audioRelativeIndex = -1;
-                    for (var i = 0; i < _audioStreams.Count; i++)
+                    // 速度変更時は全映像ストリームを setpts で縮尺する。時刻の原点は STARTPTS にしない。
+                    // 音声のチャンネル構成変更などでフィルターグラフが再初期化されると、再初期化後の
+                    // 最初のフレームで STARTPTS が取り直され、時刻軸が 0 へ戻って出力が壊れるため。
+                    // グラフ内の時刻は入力の先頭を 0 としたものなので、そのまま縮尺すればよい。
+                    for (var videoOrdinal = 0; videoOrdinal < _videoStreams.Count; videoOrdinal++)
                     {
-                        if (_audioStreams[i].Index == selectedAudios[audioOrdinal].Index) { audioRelativeIndex = i; break; }
+                        var videoLabel = $"vout{videoOrdinal}";
+                        var videoStreamIndex = _videoStreams[videoOrdinal].Index;
+                        filterParts.Add($"[0:{videoStreamIndex}]setpts=PTS/{speedInvariant}[{videoLabel}]");
+                        videoLabels.Add($"[{videoLabel}]");
                     }
-                    if (audioRelativeIndex < 0) throw new InvalidOperationException("選択した音声トラックのインデックスを取得できません。");
-                    var audioLabel = $"aout{audioOrdinal}";
-                    var tempoFilter = GetAtempoFilterChain(speedValue);
-                    filterParts.Add($"[0:a:{audioRelativeIndex}]asetpts=PTS-STARTPTS,{tempoFilter}[{audioLabel}]");
-                    audioLabels.Add($"[{audioLabel}]");
-                }
 
-                args.Add("-filter_complex");
-                args.Add(string.Join(";", filterParts));
-                foreach (var label in videoLabels) { args.Add("-map"); args.Add(label); }
-                foreach (var label in audioLabels) { args.Add("-map"); args.Add(label); }
+                    for (var audioOrdinal = 0; audioOrdinal < selectedAudios.Count; audioOrdinal++)
+                    {
+                        var audioRelativeIndex = -1;
+                        for (var i = 0; i < _audioStreams.Count; i++)
+                        {
+                            if (_audioStreams[i].Index == selectedAudios[audioOrdinal].Index) { audioRelativeIndex = i; break; }
+                        }
+                        if (audioRelativeIndex < 0) throw new InvalidOperationException("選択した音声トラックのインデックスを取得できません。");
+                        var audioLabel = $"aout{audioOrdinal}";
+                        var tempoFilter = GetAtempoFilterChain(speedValue);
+                        filterParts.Add($"[0:a:{audioRelativeIndex}]{tempoFilter}[{audioLabel}]");
+                        audioLabels.Add($"[{audioLabel}]");
+                    }
+
+                    args.Add("-filter_complex");
+                    args.Add(string.Join(";", filterParts));
+                    foreach (var label in videoLabels) { args.Add("-map"); args.Add(label); }
+                    foreach (var label in audioLabels) { args.Add("-map"); args.Add(label); }
+                }
+                else
+                {
+                    // 速度変更がない場合はフィルターを通さず、そのままマッピングする。
+                    // フィルターグラフは音声のチャンネル構成変更などで再初期化されることがあり、
+                    // その際に setpts / asetpts の時刻軸が壊れて、再生の不安定な出力になる入力があるため。
+                    foreach (var video in _videoStreams) { args.Add("-map"); args.Add($"0:{video.Index}"); }
+                    for (var audioOrdinal = 0; audioOrdinal < selectedAudios.Count; audioOrdinal++)
+                    {
+                        var audioRelativeIndex = -1;
+                        for (var i = 0; i < _audioStreams.Count; i++)
+                        {
+                            if (_audioStreams[i].Index == selectedAudios[audioOrdinal].Index) { audioRelativeIndex = i; break; }
+                        }
+                        if (audioRelativeIndex < 0) throw new InvalidOperationException("選択した音声トラックのインデックスを取得できません。");
+                        args.Add("-map");
+                        args.Add($"0:a:{audioRelativeIndex}");
+                    }
+                }
 
                 args.AddRange(GetVideoEncoderArgs());
                 WriteLog($"映像エンコーダー: {GetVideoEncoderLogText()}");
@@ -2564,7 +2588,8 @@ internal sealed partial class MainForm
         var speedChanged = Math.Abs(speed - 1.0) >= 0.000001;
         var speedInvariant = speed.ToString("0.###", CultureInfo.InvariantCulture);
         var filterParts = new List<string>();
-        var videoChain = $"[0:v:0]trim=start={startSec}:end={endSec},setpts=PTS-STARTPTS";
+        // 時刻の原点は STARTPTS ではなく区間の開始時刻を使う。グラフの再初期化で STARTPTS が取り直されると時刻軸が戻ってしまうため (全体編集側のコメント参照)。
+        var videoChain = $"[0:v:0]trim=start={startSec}:end={endSec},setpts=PTS-{startSec}/TB";
         var cropFilter = GetSegmentCropFilter(segment);
         if (cropFilter.Length > 0) videoChain += "," + cropFilter;
         if (speedChanged) videoChain += ",setpts=PTS/" + speedInvariant;
@@ -2574,7 +2599,7 @@ internal sealed partial class MainForm
         for (var audioOrdinal = 0; audioOrdinal < audioRelativeIndices.Length; audioOrdinal++)
         {
             var audioRel = audioRelativeIndices[audioOrdinal];
-            filterParts.Add($"[0:a:{audioRel}]atrim=start={startSec}:end={endSec},asetpts=PTS-STARTPTS{atempoSuffix}[aout{audioOrdinal}]");
+            filterParts.Add($"[0:a:{audioRel}]atrim=start={startSec}:end={endSec},asetpts=PTS-{startSec}/TB{atempoSuffix}[aout{audioOrdinal}]");
         }
         var filterComplex = string.Join(";", filterParts);
         var args = new List<string> { "-hide_banner", "-nostdin", "-y", "-loglevel", "verbose", "-probesize", "100M", "-analyzeduration", "100M", "-i", _inputPath, "-filter_complex", filterComplex, "-map", "[vout]" };
@@ -2708,7 +2733,7 @@ internal sealed partial class MainForm
             var startSec = (startMs / 1000.0).ToString("0.###", CultureInfo.InvariantCulture);
             var endSec = (GetReencodeEndMs(endMs) / 1000.0).ToString("0.###", CultureInfo.InvariantCulture);
             var lengthText = lengthMs.ToString(CultureInfo.InvariantCulture);
-            var videoChain = $"[0:v:0]trim=start={startSec}:end={endSec},setpts=PTS-STARTPTS";
+            var videoChain = $"[0:v:0]trim=start={startSec}:end={endSec},setpts=PTS-{startSec}/TB";
             videoChain += "," + GetSegmentCropFilter(segment) + "[vout]";
             args.AddRange(new[] { "-filter_complex", videoChain, "-map", "[vout]" });
             foreach (var audioRel in selectedAudioRelativeIndices) { args.Add("-map"); args.Add($"0:a:{audioRel}"); }
@@ -2765,7 +2790,7 @@ internal sealed partial class MainForm
                 var endSec = (GetReencodeEndMs(endMs) / 1000.0).ToString("0.###", CultureInfo.InvariantCulture);
                 var videoLabel = $"vseg{i}";
                 segmentVideoLabels.Add($"[{videoLabel}]");
-                var videoChain = $"[0:v:0]trim=start={startSec}:end={endSec},setpts=PTS-STARTPTS";
+                var videoChain = $"[0:v:0]trim=start={startSec}:end={endSec},setpts=PTS-{startSec}/TB";
                 var segmentCropFilter = GetSegmentCropFilter(segment);
                 if (segmentCropFilter.Length > 0) videoChain += "," + segmentCropFilter;
                 if (speedChanged) videoChain += ",setpts=PTS/" + speedInvariant;
@@ -2781,7 +2806,7 @@ internal sealed partial class MainForm
                     var audioLabel = $"aseg{i}_{audioOrdinal}";
                     thisSegmentAudioLabels.Add($"[{audioLabel}]");
                     var audioTempoSuffix = speedChanged ? "," + GetAtempoFilterChain(speedValue) : "";
-                    filterParts.Add($"[0:a:{audioRel}]atrim=start={startSec}:end={endSec},asetpts=PTS-STARTPTS{audioTempoSuffix}[{audioLabel}]");
+                    filterParts.Add($"[0:a:{audioRel}]atrim=start={startSec}:end={endSec},asetpts=PTS-{startSec}/TB{audioTempoSuffix}[{audioLabel}]");
                 }
                 segmentAudioLabels.Add(thisSegmentAudioLabels.ToArray());
                 WriteLog($"再エンコード区間 {i + 1}/{segmentCount}: start={TimeText.FormatClockFromMs(startMs)}; end={TimeText.FormatClockFromMs(endMs)}; duration={TimeText.FormatClockFromMs(endMs - startMs)}");
