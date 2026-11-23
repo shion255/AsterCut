@@ -19,6 +19,23 @@ namespace AsterCut;
 /// </summary>
 internal sealed class ThemedCheckedListBox : CheckedListBox
 {
+    // 行以外の場所 (末尾の行より下の余白など) のクリックではチェックを切り替えない。
+    // 既定の CheckedListBox は、余白のクリックでも末尾の行のチェックを切り替えてしまう。
+    protected override void WndProc(ref Message m)
+    {
+        const int wmLButtonDown = 0x0201;
+        const int wmLButtonDblClk = 0x0203;
+        if (m.Msg == wmLButtonDown || m.Msg == wmLButtonDblClk)
+        {
+            var x = (short)(m.LParam.ToInt64() & 0xFFFF);
+            var y = (short)((m.LParam.ToInt64() >> 16) & 0xFFFF);
+            var point = new Point(x, y);
+            var index = IndexFromPoint(point);
+            if (index < 0 || !GetItemRectangle(index).Contains(point)) return;
+        }
+        base.WndProc(ref m);
+    }
+
     protected override void OnDrawItem(DrawItemEventArgs e)
     {
         if (e.Index < 0 || e.Index >= Items.Count)
