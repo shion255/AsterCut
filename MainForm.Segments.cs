@@ -590,8 +590,10 @@ internal sealed partial class MainForm
         }
         // 結合・分割を問わず、すべての区間を切り離して開始時刻順に並べ替える。
         var ordered = _segments
-            .Select((segment, i) => (Segment: segment, segment.StartMs, OriginalIndex: i))
+            .Select((segment, i) => (Segment: segment, segment.StartMs, segment.EndMs, segment.HasClipping, OriginalIndex: i))
             .OrderBy(x => x.StartMs)
+            .ThenBy(x => x.EndMs)
+            .ThenByDescending(x => x.HasClipping)
             .ThenBy(x => x.OriginalIndex)
             .Select(x => x.Segment)
             .ToList();
