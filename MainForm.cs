@@ -1607,10 +1607,21 @@ internal sealed partial class MainForm : Form
     }
 
     // 映像情報の幅が設計値より広がった分は、基本情報に8割、_ASTER_CUT に2割を配る。
+    // ただし基本情報は、全ての値が入りきる幅 + 20px を上限とし、それ以上は _ASTER_CUT へ回す。
     private void LayoutSourceInfoColumns(int groupWidth)
     {
         var extra = Math.Max(0, groupWidth - 1015);
         var valueGain = (int)(extra * 0.8);
+        var fullWidth = 0;
+        foreach (var pair in _sourceValueFullTexts)
+        {
+            fullWidth = Math.Max(fullWidth, TextRenderer.MeasureText(pair.Value, pair.Key.Font).Width);
+        }
+        if (_sourceFileNameFullText.Length > 0)
+        {
+            fullWidth = Math.Max(fullWidth, TextRenderer.MeasureText(_sourceFileNameFullText, _sourceFileNameValue.Font).Width);
+        }
+        valueGain = Math.Min(valueGain, Math.Max(0, fullWidth + 20 - 474));
         _sourceValueMaxWidth = 474 + valueGain;
         _sourceFileSizeValue.Width = _sourceValueMaxWidth;
         _sourceDurationValue.Width = _sourceValueMaxWidth;
@@ -2454,6 +2465,7 @@ internal sealed partial class MainForm : Form
             SetSourceValueText(_sourceCodecValue, "不明");
         }
         _sourceMetadataTextBox.Text = GetSourceEditorMetadataText();
+        LayoutSourceInfoColumns(_sourceInfoGroup.Width);
     }
 
     private string GetSourceEditorMetadataText()
