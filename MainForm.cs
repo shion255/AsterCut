@@ -119,8 +119,13 @@ internal sealed partial class MainForm : Form
     private readonly Label _sourceFileSizeValue;
     private readonly Label _sourceFrameRateValue;
     private readonly Label _sourceCodecValue;
+    private readonly LinkLabel _sourceMetadataTitle;
     private readonly TextBox _sourceMetadataTextBox;
     private readonly ToolTip _sourceToolTip = new();
+    // 省略前の全文。幅が変わったときに、省略をやり直すために保持する。
+    private readonly Dictionary<Label, string> _sourceValueFullTexts = new();
+    private string _sourceFileNameFullText = "";
+    private int _sourceValueMaxWidth = 474;
     private readonly CheckedListBox _audioList;
 
     // 入力履歴ポップアップ。
@@ -387,7 +392,7 @@ internal sealed partial class MainForm : Form
         MakeSourceRow("コンテナ詳細:", 114, out _sourceContainerValue);
         MakeSourceRow("コーデック:", 142, out _sourceCodecValue);
         MakeSourceRow("フレームレート:", 170, out _sourceFrameRateValue);
-        var metadataTitle = new LinkLabel
+        _sourceMetadataTitle = new LinkLabel
         {
             Text = "_ASTER_CUT (ウィンドウ表示)",
             LinkArea = new LinkArea(11, 9),
@@ -401,13 +406,13 @@ internal sealed partial class MainForm : Form
             LinkBehavior = LinkBehavior.HoverUnderline,
             TextAlign = ContentAlignment.MiddleLeft,
         };
-        metadataTitle.LinkClicked += (_, _) => ShowEditorMetadataWindow();
-        _sourceInfoGroup.Controls.Add(metadataTitle);
+        _sourceMetadataTitle.LinkClicked += (_, _) => ShowEditorMetadataWindow();
+        _sourceInfoGroup.Controls.Add(_sourceMetadataTitle);
         _sourceMetadataTextBox = new TextBox
         {
             Location = new Point(620, 54),
             Size = new Size(381, 141),
-            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+            Anchor = AnchorStyles.Top | AnchorStyles.Left,
             Multiline = true,
             ReadOnly = true,
             WordWrap = true,
@@ -1565,6 +1570,7 @@ internal sealed partial class MainForm : Form
         {
             _sourceInfoGroup.SetBounds(edge, 12, _sourceTab.ClientSize.Width - edge * 2, 209);
             _audioGroup.SetBounds(edge, 233, _sourceTab.ClientSize.Width - edge * 2, 353);
+            LayoutSourceInfoColumns(_sourceTab.ClientSize.Width - edge * 2);
         }
         if (_logTab.ClientSize.Width >= 400 && _logTab.ClientSize.Height >= 300)
         {
@@ -1598,6 +1604,24 @@ internal sealed partial class MainForm : Form
             UpdateChapterListBounds();
         }
         UpdatePreviewColumnLayout();
+    }
+
+    // 映像情報の幅が設計値より広がった分は、基本情報に8割、_ASTER_CUT に2割を配る。
+    private void LayoutSourceInfoColumns(int groupWidth)
+    {
+        var extra = Math.Max(0, groupWidth - 1015);
+        var valueGain = (int)(extra * 0.8);
+        _sourceValueMaxWidth = 474 + valueGain;
+        _sourceFileSizeValue.Width = _sourceValueMaxWidth;
+        _sourceDurationValue.Width = _sourceValueMaxWidth;
+        _sourceContainerValue.Width = _sourceValueMaxWidth;
+        _sourceCodecValue.Width = _sourceValueMaxWidth;
+        _sourceFrameRateValue.Width = _sourceValueMaxWidth;
+        var metaX = 620 + valueGain;
+        _sourceMetadataTitle.Location = new Point(metaX, 30);
+        _sourceMetadataTextBox.Location = new Point(metaX, 54);
+        _sourceMetadataTextBox.Width = groupWidth - metaX - 14;
+        RefitSourceValues();
     }
 
     // 区間一覧 (グループ) の幅の上限。これ以上は一覧に回さず、増分はすべてプレビューへ回す。
@@ -2324,16 +2348,30 @@ internal sealed partial class MainForm : Form
     // 省略された値だけ、全文をツールチップで表示する。
     private void SetSourceValueText(Label label, string text)
     {
+        _sourceValueFullTexts[label] = text;
+        ApplySourceValueText(label, text);
+    }
+
+    private void ApplySourceValueText(Label label, string text)
+    {
         label.Text = FitTextToWidth(label.Font, text, label.Width, out var truncated);
         _sourceToolTip.SetToolTip(label, truncated ? text : "");
     }
 
     private void SetSourceFileNameText(string text)
     {
+        _sourceFileNameFullText = text;
         var width = TextRenderer.MeasureText(text, _sourceFileNameValue.Font).Width;
-        _sourceFileNameValue.Text = FitTextToWidth(_sourceFileNameValue.Font, text, 474, out var truncated);
-        _sourceFileNameValue.Width = Math.Min(width, 474);
+        _sourceFileNameValue.Text = FitTextToWidth(_sourceFileNameValue.Font, text, _sourceValueMaxWidth, out var truncated);
+        _sourceFileNameValue.Width = Math.Min(width, _sourceValueMaxWidth);
         _sourceToolTip.SetToolTip(_sourceFileNameValue, truncated ? text : "");
+    }
+
+    // 幅が変わったときに、保持している全文で省略をやり直す。
+    private void RefitSourceValues()
+    {
+        foreach (var pair in _sourceValueFullTexts) ApplySourceValueText(pair.Key, pair.Value);
+        if (_sourceFileNameFullText.Length > 0) SetSourceFileNameText(_sourceFileNameFullText);
     }
 
     private void UpdateSourceInfoPanel()
