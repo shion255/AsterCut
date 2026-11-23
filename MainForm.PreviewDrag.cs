@@ -84,6 +84,8 @@ internal sealed partial class MainForm
     private PreviewWheelHookProc? _previewWheelHookProc;
     private int _previewWheelPendingDelta;
     private int _previewWheelRemainder;
+    private int _segmentPopupWheelPendingDelta;
+    private int _segmentPopupWheelRemainder;
 
     private bool TestPreviewPointerTarget()
     {
@@ -143,17 +145,61 @@ internal sealed partial class MainForm
 
     private IntPtr PreviewWheelHookCallback(int nCode, IntPtr wParam, IntPtr lParam)
     {
-        if (nCode >= 0 && wParam == (IntPtr)WmMouseWheelMessage && _previewReady)
+        if (nCode >= 0 && wParam == (IntPtr)WmMouseWheelMessage)
         {
             var info = Marshal.PtrToStructure<PreviewWheelHookInfo>(lParam);
             var delta = (short)(info.MouseData >> 16);
-            if (delta != 0 && IsPreviewWheelTarget(info.Pt))
+            if (delta != 0)
             {
-                _previewWheelPendingDelta += delta;
-                return (IntPtr)1;
+                if (IsSegmentPopupWheelTarget(info.Pt))
+                {
+                    _segmentPopupWheelPendingDelta += delta;
+                    return (IntPtr)1;
+                }
+                if (_previewReady && IsPreviewWheelTarget(info.Pt))
+                {
+                    _previewWheelPendingDelta += delta;
+                    return (IntPtr)1;
+                }
             }
         }
         return CallNextHookEx(_previewWheelHook, nCode, wParam, lParam);
+    }
+
+    private bool IsSegmentPopupWheelTarget(Point screenPoint)
+    {
+        // 区間ポップアップが前面で、ポインターがその映像 (専用 mpv の子ウィンドウ) の上にあるときだけ対象にする。
+        if (_segmentPopupForm is not { IsDisposed: false } popup || !popup.Visible) return false;
+        if (_segmentPopupVideoPanel is not { IsDisposed: false } panel || !panel.Visible || !panel.IsHandleCreated) return false;
+        if (GetForegroundWindow() != popup.Handle) return false;
+        for (var handle = WindowFromPoint(screenPoint); handle != IntPtr.Zero; handle = GetParent(handle))
+        {
+            if (handle == panel.Handle) return true;
+        }
+        return false;
+    }
+
+    private void UpdateSegmentPopupWheel()
+    {
+        var pending = _segmentPopupWheelPendingDelta;
+        if (pending == 0) return;
+        _segmentPopupWheelPendingDelta = 0;
+        if (_segmentPopupForm is not { IsDisposed: false }) return;
+        _segmentPopupWheelRemainder += pending;
+        var notches = 0;
+        while (_segmentPopupWheelRemainder >= 120) { _segmentPopupWheelRemainder -= 120; notches--; }
+        while (_segmentPopupWheelRemainder <= -120) { _segmentPopupWheelRemainder += 120; notches++; }
+        if (notches == 0) return;
+        if (_segmentPopupPlaying)
+        {
+            // 再生中はホイール1ノッチで5秒移動する (上が戻る、下が進む)。
+            SeekSegmentPopupToMs(GetSegmentPopupPositionMs() + 5000L * notches);
+        }
+        else
+        {
+            // 一時停止中はホイール1ノッチで5フレーム移動する (上が戻る、下が進む)。
+            StepSegmentPopupFrame(notches > 0 ? 1 : -1, 5 * Math.Abs(notches));
+        }
     }
 
     private bool IsPreviewWheelTarget(Point screenPoint)

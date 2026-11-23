@@ -1153,6 +1153,7 @@ internal sealed partial class MainForm : Form
         _previewDragTimer.Tick += (_, _) =>
         {
             UpdatePreviewWheel();
+            UpdateSegmentPopupWheel();
             UpdatePreviewPointerDrag();
             UpdatePopupPointerDrag();
             UpdateSegmentPopupPointerDrag();
