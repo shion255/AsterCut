@@ -64,7 +64,8 @@ internal sealed partial class MainForm
         if (_segmentPopupVideoPanel is not { IsDisposed: false } panel) return;
         _segmentPopupDrag.Update(popup, () =>
             panel.Visible
-            && panel.RectangleToScreen(panel.ClientRectangle).Contains(Control.MousePosition));
+            && panel.RectangleToScreen(panel.ClientRectangle).Contains(Control.MousePosition),
+            ToggleSegmentPopupPlayback);
     }
 
     /// <summary>タイトルバーに、区間内の再生位置 (経過 / 区間の長さ) を表示する。</summary>

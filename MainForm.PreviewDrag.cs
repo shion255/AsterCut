@@ -669,8 +669,10 @@ internal sealed partial class MainForm
         private Point _formStartPos;
         private bool _buttonWasDown;
         private bool _pressMayDrag;
+        private long _lastClickTicks;
+        private Point _lastClickPos;
 
-        public void Update(Form form, Func<bool> isOverVideo)
+        public void Update(Form form, Func<bool> isOverVideo, Action? onDoubleClick = null)
         {
             var buttons = Control.MouseButtons;
             var pos = Control.MousePosition;
@@ -692,7 +694,30 @@ internal sealed partial class MainForm
                 if (!down || !_pressMayDrag) return;
                 if (Form.ActiveForm != form) return;
                 if (!isOverVideo()) return;
+                if (onDoubleClick != null)
+                {
+                    // 本体のプレビューと同じ条件でダブルクリックを判定し、
+                    // その押下ではウィンドウを移動しない。
+                    var now = Environment.TickCount64;
+                    var clickSize = SystemInformation.DoubleClickSize;
+                    if (now - _lastClickTicks <= SystemInformation.DoubleClickTime
+                        && Math.Abs(pos.X - _lastClickPos.X) <= clickSize.Width
+                        && Math.Abs(pos.Y - _lastClickPos.Y) <= clickSize.Height)
+                    {
+                        onDoubleClick();
+                        _state = "ignore";
+                        _lastClickTicks = 0;
+                        return;
+                    }
+                    _lastClickTicks = now;
+                    _lastClickPos = pos;
+                }
                 _state = "pressed";
+                return;
+            }
+            if (_state == "ignore")
+            {
+                if (!down) _state = "idle";
                 return;
             }
             if (!down)
