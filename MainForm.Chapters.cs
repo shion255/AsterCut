@@ -144,7 +144,7 @@ internal sealed partial class MainForm
             }
         };
 
-        _chapterContextMenu = new ContextMenuStrip();
+        _chapterContextMenu = new ContextMenuStrip { Renderer = new ToolStripProfessionalRenderer(new AsterCutMenuColorTable()) };
         var overwriteItem = new ToolStripMenuItem("上書き") { ForeColor = Theme.MenuFore };
         overwriteItem.Click += (_, _) => OverwriteChapter(_chapterContextIndex);
         _chapterContextMenu.Items.Add(overwriteItem);
