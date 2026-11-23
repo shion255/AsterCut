@@ -1591,10 +1591,13 @@ internal sealed partial class MainForm : Form
         var growth = Math.Max(0, Width - MinimumSize.Width);
         var width = (int)Math.Floor(growth * 0.7);
         var height = Math.Max(0, Height - MinimumSize.Height);
-        if (_cutTab != null && _cutTab.ClientSize.Width > 0)
+        // 表示中でないタブページの ClientSize は古いまま残ることがあるため、
+        // 一覧 (グループ) の幅が上限を超える分の計算は、表示中のプレビューページの幅で行う。
+        var previewPage = _tabs != null && _tabs.SelectedTab == _chapterTab ? _chapterTab : _cutTab;
+        if (previewPage != null && previewPage.ClientSize.Width > 0)
         {
             // 区間一覧 (グループ) の幅が上限を超える分は、プレビューへ回す。
-            width = Math.Max(width, _cutTab.ClientSize.Width - 520 - 10 - MaxSegmentGroupWidth);
+            width = Math.Max(width, previewPage.ClientSize.Width - 520 - 10 - MaxSegmentGroupWidth);
         }
         return (width, height);
     }
