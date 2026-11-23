@@ -2308,9 +2308,11 @@ internal sealed partial class MainForm : Form
     /// </summary>
     // 値が入りきらないときは、末尾を … で切り詰める。Label の AutoEllipsis は
     // 省略時に描画のされ方が変わり、他の行と縦位置がずれるため使わない。
-    private static string FitTextToWidth(Font font, string text, int maxWidth)
+    private static string FitTextToWidth(Font font, string text, int maxWidth, out bool truncated)
     {
+        truncated = false;
         if (TextRenderer.MeasureText(text, font).Width <= maxWidth) return text;
+        truncated = true;
         var trimmed = text;
         while (trimmed.Length > 0 && TextRenderer.MeasureText(trimmed + "…", font).Width > maxWidth)
         {
@@ -2319,17 +2321,19 @@ internal sealed partial class MainForm : Form
         return trimmed.TrimEnd() + "…";
     }
 
-    private static string FitSourceValueText(Label label, string text)
+    // 省略された値だけ、全文をツールチップで表示する。
+    private void SetSourceValueText(Label label, string text)
     {
-        return FitTextToWidth(label.Font, text, label.Width);
+        label.Text = FitTextToWidth(label.Font, text, label.Width, out var truncated);
+        _sourceToolTip.SetToolTip(label, truncated ? text : "");
     }
 
     private void SetSourceFileNameText(string text)
     {
-        _sourceToolTip.SetToolTip(_sourceFileNameValue, text);
         var width = TextRenderer.MeasureText(text, _sourceFileNameValue.Font).Width;
-        _sourceFileNameValue.Text = FitTextToWidth(_sourceFileNameValue.Font, text, 474);
+        _sourceFileNameValue.Text = FitTextToWidth(_sourceFileNameValue.Font, text, 474, out var truncated);
         _sourceFileNameValue.Width = Math.Min(width, 474);
+        _sourceToolTip.SetToolTip(_sourceFileNameValue, truncated ? text : "");
     }
 
     private void UpdateSourceInfoPanel()
@@ -2337,11 +2341,11 @@ internal sealed partial class MainForm : Form
         if (_inputPath.Length == 0 || _probe == null)
         {
             SetSourceFileNameText("未読み込み");
-            _sourceContainerValue.Text = "—";
-            _sourceDurationValue.Text = "—";
-            _sourceFileSizeValue.Text = "—";
-            _sourceFrameRateValue.Text = "—";
-            _sourceCodecValue.Text = "—";
+            SetSourceValueText(_sourceContainerValue, "—");
+            SetSourceValueText(_sourceDurationValue, "—");
+            SetSourceValueText(_sourceFileSizeValue, "—");
+            SetSourceValueText(_sourceFrameRateValue, "—");
+            SetSourceValueText(_sourceCodecValue, "—");
             _sourceMetadataTextBox.Text = "—";
             return;
         }
@@ -2351,14 +2355,14 @@ internal sealed partial class MainForm : Form
 
         var containerName = _probe.FormatLongName;
         var containerId = _probe.FormatName;
-        _sourceContainerValue.Text = FitSourceValueText(_sourceContainerValue,
+        SetSourceValueText(_sourceContainerValue,
             containerName.Length > 0 && containerId.Length > 0 ? $"{containerName} ({containerId})" :
             containerName.Length > 0 ? containerName :
             containerId.Length > 0 ? containerId : "不明");
 
         var durationText = _durationMs > 0 ? TimeText.FormatClockFromMs(_durationMs) : "不明";
         if (_durationMs > 0 && TestFrameTableReady()) durationText += $" ({_frameTimesUs!.Length}f)";
-        _sourceDurationValue.Text = FitSourceValueText(_sourceDurationValue, durationText);
+        SetSourceValueText(_sourceDurationValue, durationText);
         string fileSizeText;
         try
         {
@@ -2369,7 +2373,7 @@ internal sealed partial class MainForm : Form
         {
             fileSizeText = "取得できません";
         }
-        _sourceFileSizeValue.Text = FitSourceValueText(_sourceFileSizeValue, fileSizeText);
+        SetSourceValueText(_sourceFileSizeValue, fileSizeText);
 
         var video = _videoStreams.Count > 0 ? _videoStreams[0] : null;
         var fps = 0.0;
@@ -2398,18 +2402,18 @@ internal sealed partial class MainForm : Form
         {
             vfrStatus = "VFR 判定中";
         }
-        _sourceFrameRateValue.Text = FitSourceValueText(_sourceFrameRateValue, $"{fpsText} / {vfrStatus}");
+        SetSourceValueText(_sourceFrameRateValue, $"{fpsText} / {vfrStatus}");
 
         if (video != null)
         {
-            _sourceCodecValue.Text = FitSourceValueText(_sourceCodecValue,
+            SetSourceValueText(_sourceCodecValue,
                 video.CodecLongName.Length > 0 && video.CodecName.Length > 0 ? $"{video.CodecLongName} ({video.CodecName})" :
                 video.CodecLongName.Length > 0 ? video.CodecLongName :
                 video.CodecName.Length > 0 ? video.CodecName : "不明");
         }
         else
         {
-            _sourceCodecValue.Text = "不明";
+            SetSourceValueText(_sourceCodecValue, "不明");
         }
         _sourceMetadataTextBox.Text = GetSourceEditorMetadataText();
     }
