@@ -478,7 +478,7 @@ internal sealed partial class MainForm
         }
         restoreButton.Click += (_, _) => RestoreAction();
         listView.DoubleClick += (_, _) => RestoreAction();
-        deleteButton.Click += (_, _) =>
+        void DeleteSelected()
         {
             if (listView.SelectedItems.Count == 0) return;
             var selectedItems = new List<ListViewItem>();
@@ -490,6 +490,13 @@ internal sealed partial class MainForm
             }
             WriteLog($"編集履歴を {selectedItems.Count} 件削除しました。");
             UpdateSelectionState();
+        }
+        deleteButton.Click += (_, _) => DeleteSelected();
+        listView.KeyDown += (_, e) =>
+        {
+            if (e.KeyCode != Keys.Delete) return;
+            e.Handled = true;
+            DeleteSelected();
         };
         UpdateSelectionState();
         closeButton.Click += (_, _) => dialogForm.Close();
