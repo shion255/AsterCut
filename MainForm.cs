@@ -1540,7 +1540,7 @@ internal sealed partial class MainForm : Form
             // 区間一覧のグループは、ページの右端・下端まで広げてウィンドウサイズに追従させる。
             var segmentGroupX = 520 + GetPreviewColumnExtra().Width;
             _segmentGroup.SetBounds(segmentGroupX, 143,
-                Math.Max(300, _cutTab.ClientSize.Width - segmentGroupX - edge),
+                Math.Max(300, Math.Min(MaxSegmentGroupWidth, _cutTab.ClientSize.Width - segmentGroupX - edge)),
                 Math.Max(120, _cutTab.ClientSize.Height - 143 - edge));
             UpdateSegmentListBounds();
         }
@@ -1548,18 +1548,27 @@ internal sealed partial class MainForm : Form
         {
             var chapterGroupX = 520 + GetPreviewColumnExtra().Width;
             _chapterGroup.SetBounds(chapterGroupX, 103,
-                Math.Max(300, _chapterTab.ClientSize.Width - chapterGroupX - edge),
+                Math.Max(300, Math.Min(MaxSegmentGroupWidth, _chapterTab.ClientSize.Width - chapterGroupX - edge)),
                 Math.Max(120, _chapterTab.ClientSize.Height - 103 - edge));
             UpdateChapterListBounds();
         }
         UpdatePreviewColumnLayout();
     }
 
-    /// <summary>ウィンドウの最小サイズからの増分を、プレビューへ割り当てる量に換算する (横は7割、縦はすべて)。</summary>
+    // 区間一覧 (グループ) の幅の上限。これ以上は一覧に回さず、増分はすべてプレビューへ回す。
+    private const int MaxSegmentGroupWidth = 740;
+
+    /// <summary>ウィンドウの最小サイズからの増分を、プレビューへ割り当てる量に換算する (横は7割、縦はすべて。一覧が最大幅に達した分は横もすべてプレビューへ回す)。</summary>
     private (int Width, int Height) GetPreviewColumnExtra()
     {
-        var width = (int)Math.Floor(Math.Max(0, Width - MinimumSize.Width) * 0.7);
+        var growth = Math.Max(0, Width - MinimumSize.Width);
+        var width = (int)Math.Floor(growth * 0.7);
         var height = Math.Max(0, Height - MinimumSize.Height);
+        if (_cutTab != null && _cutTab.ClientSize.Width > 0)
+        {
+            // 区間一覧 (グループ) の幅が上限を超える分は、プレビューへ回す。
+            width = Math.Max(width, _cutTab.ClientSize.Width - 520 - 10 - MaxSegmentGroupWidth);
+        }
         return (width, height);
     }
 
