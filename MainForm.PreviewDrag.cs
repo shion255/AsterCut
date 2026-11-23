@@ -71,6 +71,8 @@ internal sealed partial class MainForm
     private long _lastSpaceToggleTicks;
     private bool _previewKeyboardActive;
     private readonly bool[] _previewArrowWasDown = new bool[4];
+    private bool _previewHomeWasDown;
+    private bool _previewEndWasDown;
     private readonly long[] _previewArrowRepeatTicks = new long[4];
     private static readonly int[] PreviewArrowVirtualKeys = { 0x25, 0x27, 0x26, 0x28 };
     private Point _previewPointerDownPos;
@@ -310,6 +312,16 @@ internal sealed partial class MainForm
             return true;
         }
         if (_previewKeyboardActive
+            && keyData is Keys.Home or Keys.End
+            && (_tabs.SelectedTab == _cutTab || _tabs.SelectedTab == _chapterTab)
+            && !IsTextInputFocused()
+            && !IsPreviewKeyExcludedControlFocused())
+        {
+            if (keyData == Keys.Home) MovePreviewToStartKeepingPlayback();
+            else SetPreviewEnded();
+            return true;
+        }
+        if (_previewKeyboardActive
             && keyData is Keys.Left or Keys.Right or Keys.Up or Keys.Down
             && (_tabs.SelectedTab == _cutTab || _tabs.SelectedTab == _chapterTab)
             && !IsTextInputFocused()
@@ -461,6 +473,13 @@ internal sealed partial class MainForm
             }
             _previewArrowWasDown[i] = down;
         }
+        // Home / End は押し続けても繰り返さない。
+        var homeDown = (GetAsyncKeyState(0x24) & 0x8000) != 0;
+        if (homeDown && !_previewHomeWasDown) MovePreviewToStartKeepingPlayback();
+        _previewHomeWasDown = homeDown;
+        var endDown = (GetAsyncKeyState(0x23) & 0x8000) != 0;
+        if (endDown && !_previewEndWasDown) SetPreviewEnded();
+        _previewEndWasDown = endDown;
     }
 
     // ------------------------------------------------------------------

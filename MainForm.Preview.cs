@@ -982,6 +982,19 @@ internal sealed partial class MainForm
         }
     }
 
+    /// <summary>Home キー用: 先頭のフレームへ移動する。再生中なら、移動後も再生を続ける。</summary>
+    private void MovePreviewToStartKeepingPlayback()
+    {
+        var wasPlaying = _previewIsPlaying;
+        MovePreviewToBoundary(false);
+        if (wasPlaying && _previewReady)
+        {
+            InvokePlayerPlay();
+            _previewIsPlaying = true;
+            UpdatePreviewPlaybackButtons();
+        }
+    }
+
     private void MovePreviewToBoundary(bool toEnd)
     {
         if (!_previewReady || !TestPlayerAvailable()) return;
