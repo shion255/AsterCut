@@ -130,6 +130,12 @@ internal sealed partial class MainForm : Form
     private bool _historyHoverDelete;
     private DateTime _historyToggleSuppressedUntil = DateTime.MinValue;
 
+    // 履歴ポップアップが対象にしている履歴と入力欄 (入力動画と入力チャプターで共用)。
+    private List<string> _historyEntries = null!;
+    private TextBox _historyTargetBox = null!;
+    private Button _historyAnchorButton = null!;
+    private Action<string> _historyPicked = null!;
+
     // フレーム時刻テーブル (フレームインデックス) の構築状態。
     private long[]? _frameTimesUs;
     private long[]? _frameKeyTimesUs;
@@ -1560,9 +1566,9 @@ internal sealed partial class MainForm : Form
         if (_chapterTab.ClientSize.Width >= 700 && _chapterTab.ClientSize.Height >= 300)
         {
             var chapterGroupX = 520 + GetPreviewColumnExtra().Width;
-            _chapterGroup.SetBounds(chapterGroupX, 103,
+            _chapterGroup.SetBounds(chapterGroupX, 145,
                 Math.Max(300, Math.Min(MaxSegmentGroupWidth, _chapterTab.ClientSize.Width - chapterGroupX - edge)),
-                Math.Max(120, _chapterTab.ClientSize.Height - 103 - edge));
+                Math.Max(120, _chapterTab.ClientSize.Height - 145 - edge));
             UpdateChapterListBounds();
         }
         UpdatePreviewColumnLayout();
@@ -1892,13 +1898,13 @@ internal sealed partial class MainForm : Form
         try
         {
             list.Items.Clear();
-            if (_settings.InputHistory.Count == 0)
+            if (_historyEntries.Count == 0)
             {
                 list.Items.Add("（履歴はありません）");
             }
             else
             {
-                foreach (var path in _settings.InputHistory) list.Items.Add(path);
+                foreach (var path in _historyEntries) list.Items.Add(path);
             }
         }
         finally
@@ -1916,11 +1922,29 @@ internal sealed partial class MainForm : Form
 
     private void RemoveInputHistory(string path)
     {
-        var removed = _settings.InputHistory.RemoveAll(p => string.Equals(p, path, StringComparison.OrdinalIgnoreCase)) > 0;
+        var removed = _historyEntries.RemoveAll(p => string.Equals(p, path, StringComparison.OrdinalIgnoreCase)) > 0;
         if (removed) SaveSettingsFromUi();
     }
 
     private void ShowInputHistoryPopup()
+    {
+        _historyEntries = _settings.InputHistory;
+        _historyTargetBox = _inputPathBox;
+        _historyAnchorButton = _historyButton;
+        _historyPicked = path => { _inputPathBox.Text = path; _ = LoadInputFileAsync(path); };
+        ShowHistoryPopupCore();
+    }
+
+    private void ShowChapterHistoryPopup()
+    {
+        _historyEntries = _settings.ChapterInputHistory;
+        _historyTargetBox = _chapterPathBox;
+        _historyAnchorButton = _chapterHistoryButton;
+        _historyPicked = path => { _chapterPathBox.Text = path; LoadChapterFile(path); };
+        ShowHistoryPopupCore();
+    }
+
+    private void ShowHistoryPopupCore()
     {
         // すでに開いている場合は閉じる (▼ボタンのトグル動作)。
         if (_historyPopup is { IsDisposed: false })
@@ -1959,7 +1983,7 @@ internal sealed partial class MainForm : Form
         list.DrawItem += (_, e) =>
         {
             if (e.Index < 0 || e.Index >= list.Items.Count) return;
-            var isPlaceholder = _settings.InputHistory.Count == 0;
+            var isPlaceholder = _historyEntries.Count == 0;
             var isHover = e.Index == _historyHoverIndex;
             var background = isHover && !isPlaceholder ? Color.FromArgb(58, 54, 72) : Theme.BoxBack;
             using (var brush = new SolidBrush(background))
@@ -1991,7 +2015,7 @@ internal sealed partial class MainForm : Form
         {
             var index = list.IndexFromPoint(e.Location);
             var overDelete = false;
-            if (index >= 0 && _settings.InputHistory.Count > 0)
+            if (index >= 0 && _historyEntries.Count > 0)
             {
                 try { overDelete = GetHistoryDeleteRect(list.GetItemRectangle(index)).Contains(e.Location); }
                 catch { /* 範囲外なら false */ }
@@ -2016,7 +2040,7 @@ internal sealed partial class MainForm : Form
         list.MouseClick += (_, e) =>
         {
             if (e.Button != MouseButtons.Left) return;
-            if (_settings.InputHistory.Count == 0) return;
+            if (_historyEntries.Count == 0) return;
             var index = list.IndexFromPoint(e.Location);
             if (index < 0 || index >= list.Items.Count) return;
             var selectedPath = (string)list.Items[index];
@@ -2031,8 +2055,7 @@ internal sealed partial class MainForm : Form
                 return;
             }
             CloseInputHistoryPopup();
-            _inputPathBox.Text = selectedPath;
-            _ = LoadInputFileAsync(selectedPath);
+            _historyPicked(selectedPath);
         };
         list.KeyDown += (_, e) =>
         {
@@ -2041,15 +2064,14 @@ internal sealed partial class MainForm : Form
                 e.Handled = true;
                 CloseInputHistoryPopup();
             }
-            else if (e.KeyCode == Keys.Enter && list.SelectedIndex >= 0 && _settings.InputHistory.Count > 0)
+            else if (e.KeyCode == Keys.Enter && list.SelectedIndex >= 0 && _historyEntries.Count > 0)
             {
                 e.Handled = true;
                 var selectedPath = (string)list.Items[list.SelectedIndex];
                 CloseInputHistoryPopup();
-                _inputPathBox.Text = selectedPath;
-                _ = LoadInputFileAsync(selectedPath);
+                _historyPicked(selectedPath);
             }
-            else if (e.KeyCode == Keys.Delete && list.SelectedIndex >= 0 && _settings.InputHistory.Count > 0)
+            else if (e.KeyCode == Keys.Delete && list.SelectedIndex >= 0 && _historyEntries.Count > 0)
             {
                 e.Handled = true;
                 RemoveInputHistory((string)list.Items[list.SelectedIndex]);
@@ -2061,10 +2083,10 @@ internal sealed partial class MainForm : Form
             // ▼ボタンを押して閉じた場合は、直後に発生するボタンの Click で開き直さないよう印を付ける。
             try
             {
-                if (!_historyButton.IsDisposed)
+                if (!_historyAnchorButton.IsDisposed)
                 {
-                    var cursorInButton = _historyButton.PointToClient(Control.MousePosition);
-                    if (_historyButton.ClientRectangle.Contains(cursorInButton))
+                    var cursorInButton = _historyAnchorButton.PointToClient(Control.MousePosition);
+                    if (_historyAnchorButton.ClientRectangle.Contains(cursorInButton))
                     {
                         _historyToggleSuppressedUntil = DateTime.UtcNow.AddMilliseconds(500);
                     }
@@ -2084,11 +2106,11 @@ internal sealed partial class MainForm : Form
             }
         };
 
-        popup.Width = Math.Max(240, _inputPathBox.Width);
+        popup.Width = Math.Max(240, _historyTargetBox.Width);
         RefreshInputHistoryList();
-        var belowLeft = _inputPathBox.PointToScreen(new Point(0, _inputPathBox.Height + 2));
-        var aboveLeft = _inputPathBox.PointToScreen(new Point(0, -popup.Height - 2));
-        var workingArea = Screen.FromControl(_inputPathBox).WorkingArea;
+        var belowLeft = _historyTargetBox.PointToScreen(new Point(0, _historyTargetBox.Height + 2));
+        var aboveLeft = _historyTargetBox.PointToScreen(new Point(0, -popup.Height - 2));
+        var workingArea = Screen.FromControl(_historyTargetBox).WorkingArea;
         var popupX = belowLeft.X;
         if (popupX + popup.Width > workingArea.Right) popupX = workingArea.Right - popup.Width;
         if (popupX < workingArea.Left) popupX = workingArea.Left;
@@ -2212,18 +2234,22 @@ internal sealed partial class MainForm : Form
         Text = _inputPath.Length > 0 ? $"{AppTitleWithVersion} - {Path.GetFileName(_inputPath)}" : AppTitleWithVersion;
     }
 
-    private void AddInputHistory(string path)
+    private void AddHistoryEntry(List<string> entries, string path)
     {
         if (string.IsNullOrWhiteSpace(path)) return;
         string fullPath;
         try { fullPath = Path.GetFullPath(path.Trim().Trim('"')); }
         catch { return; }
         if (fullPath.Length == 0) return;
-        _settings.InputHistory.RemoveAll(p => string.Equals(p, fullPath, StringComparison.OrdinalIgnoreCase));
-        _settings.InputHistory.Insert(0, fullPath);
-        while (_settings.InputHistory.Count > 10) _settings.InputHistory.RemoveAt(_settings.InputHistory.Count - 1);
+        entries.RemoveAll(p => string.Equals(p, fullPath, StringComparison.OrdinalIgnoreCase));
+        entries.Insert(0, fullPath);
+        while (entries.Count > 10) entries.RemoveAt(entries.Count - 1);
         SaveSettingsFromUi();
     }
+
+    private void AddInputHistory(string path) => AddHistoryEntry(_settings.InputHistory, path);
+
+    private void AddChapterInputHistory(string path) => AddHistoryEntry(_settings.ChapterInputHistory, path);
 
     private void UpdateAudioList()
     {
@@ -2588,6 +2614,7 @@ internal sealed partial class MainForm : Form
         ClearSegmentsForNewInput();
         ClearChapters();
         _chapterStartBox.Text = "00:00:00.000";
+        _chapterPathBox.Text = "";
         _chapterOutputPathBox.Text = "";
         _clipCurrent = new Segment();
         _cutStartBox.Text = "00:00:00.000";

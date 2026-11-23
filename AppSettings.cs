@@ -30,6 +30,7 @@ internal sealed class AppSettings
     public string OutputProfileName { get; set; } = "";
     public string SpecJapaneseFontName { get; set; } = "BIZ UDPゴシック";
     public List<string> InputHistory { get; set; } = new();
+    public List<string> ChapterInputHistory { get; set; } = new();
     public List<EditHistoryEntry> EditHistory { get; set; } = new();
     public List<int> EditHistoryColumnWidths { get; set; } = new();
     public int EditHistoryMaxCount { get; set; } = 20;
@@ -69,6 +70,18 @@ internal sealed class AppSettings
                     if (text.Length == 0 || !seen.Add(text)) continue;
                     settings.InputHistory.Add(text);
                     if (settings.InputHistory.Count >= 10) break;
+                }
+            }
+
+            if (root.TryGetProperty("ChapterInputHistory", out var chapterHistory) && chapterHistory.ValueKind == JsonValueKind.Array)
+            {
+                var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var item in chapterHistory.EnumerateArray())
+                {
+                    var text = (item.ValueKind == JsonValueKind.String ? item.GetString() ?? "" : "").Trim().Trim('"');
+                    if (text.Length == 0 || !seen.Add(text)) continue;
+                    settings.ChapterInputHistory.Add(text);
+                    if (settings.ChapterInputHistory.Count >= 10) break;
                 }
             }
 

@@ -27,6 +27,8 @@ internal sealed partial class MainForm
     private int _chapterSelectedIndex = -1;
     private int _chapterContextIndex = -1;
 
+    private TextBox _chapterPathBox = null!;
+    private Button _chapterHistoryButton = null!;
     private TextBox _chapterStartBox = null!;
     private Panel _chapterGroup = null!;
     private Panel _chapterRowsPanel = null!;
@@ -36,12 +38,69 @@ internal sealed partial class MainForm
 
     private void BuildChapterTab()
     {
-        _chapterTab.Controls.Add(Theme.MakeLabel("開始:", 535, 16, 48));
-        _chapterStartBox = Theme.MakeTextBox(585, 15, 145);
+        // 入力チャプター (入力動画ボックスと同じ仕様: パスの表示、ドラッグ＆ドロップ、
+        // 入力履歴、「参照...」「読み込み」)。今読み込まれているチャプターファイルのパスを表示する。
+        var chapterPathLabel = Theme.MakeLabel("入力チャプター:", 520, 16, 102);
+        chapterPathLabel.Font = Font;
+        chapterPathLabel.Width = chapterPathLabel.PreferredWidth;
+        _chapterTab.Controls.Add(chapterPathLabel);
+        var chapterPathBoxX = 520 + chapterPathLabel.PreferredWidth + 1;
+        _chapterPathBox = Theme.MakeTextBox(chapterPathBoxX, 15, 895 - chapterPathBoxX);
+        _chapterPathBox.AllowDrop = true;
+        _chapterPathBox.DragEnter += ChapterFileDragEnter;
+        _chapterPathBox.DragOver += ChapterFileDragOver;
+        _chapterPathBox.DragDrop += ChapterFileDragDrop;
+        _chapterPathBox.KeyDown += (_, e) =>
+        {
+            if (e.Alt && e.KeyCode == Keys.Down)
+            {
+                e.Handled = true;
+                e.SuppressKeyPress = true;
+                ShowChapterHistoryPopup();
+            }
+        };
+        _chapterPathBox.HandleCreated += (_, _) => ApplyTextBoxMarginsOnce(_chapterPathBox, 2, 26);
+        ApplyTextBoxMarginsOnce(_chapterPathBox, 2, 26);
+        _chapterTab.Controls.Add(_chapterPathBox);
+        _chapterHistoryButton = Theme.MakeButton("▼", 871, 16, 22, 24);
+        _chapterHistoryButton.FlatAppearance.BorderSize = 0;
+        _chapterHistoryButton.FlatAppearance.MouseOverBackColor = Color.FromArgb(58, 54, 72);
+        _chapterHistoryButton.FlatAppearance.MouseDownBackColor = Color.FromArgb(86, 74, 110);
+        _chapterHistoryButton.BackColor = Theme.BoxBack;
+        _chapterHistoryButton.ForeColor = Theme.MutedFore;
+        _chapterHistoryButton.Font = new Font("Meiryo UI", 8f);
+        _chapterHistoryButton.TabStop = false;
+        var chapterHistoryToolTip = new ToolTip();
+        chapterHistoryToolTip.SetToolTip(_chapterHistoryButton, "入力チャプターの履歴を表示 (最大 10 件)");
+        _chapterHistoryButton.Click += (_, _) =>
+        {
+            // ポップアップを閉じるためにボタンが押された直後の Click は飲み込む (入力動画の履歴と同じ)。
+            if (DateTime.UtcNow < _historyToggleSuppressedUntil)
+            {
+                _historyToggleSuppressedUntil = DateTime.MinValue;
+                return;
+            }
+            ShowChapterHistoryPopup();
+        };
+        _chapterTab.Controls.Add(_chapterHistoryButton);
+        _chapterHistoryButton.BringToFront();
+        var chapterBrowseButton = Theme.MakeButton("参照...", 901, 14, 78, 30);
+        chapterBrowseButton.Click += (_, _) => BrowseChapterFile();
+        _chapterTab.Controls.Add(chapterBrowseButton);
+        var chapterLoadButton = Theme.MakeButton("読み込み", 985, 14, 105, 30);
+        chapterLoadButton.Click += (_, _) => LoadChapterRequested();
+        _chapterTab.Controls.Add(chapterLoadButton);
+
+        var chapterStartLabel = Theme.MakeLabel("開始:", 520, 58, 48);
+        chapterStartLabel.Font = Font;
+        chapterStartLabel.Width = chapterStartLabel.PreferredWidth;
+        _chapterTab.Controls.Add(chapterStartLabel);
+        var chapterStartBoxX = 520 + chapterStartLabel.PreferredWidth + 1;
+        _chapterStartBox = Theme.MakeTextBox(chapterStartBoxX, 57, 145);
         _chapterStartBox.Text = "00:00:00.000";
         _chapterStartBox.HandleCreated += (_, _) => ApplyTextBoxMarginsOnce(_chapterStartBox, 2, 0);
         _chapterTab.Controls.Add(_chapterStartBox);
-        var setCurrentStartButton = Theme.MakeButton("現在位置を開始に設定", 740, 14, 170, 30);
+        var setCurrentStartButton = Theme.MakeButton("現在位置を開始に設定", chapterStartBoxX + 155, 56, 170, 30);
         setCurrentStartButton.Click += (_, _) =>
         {
             if (_previewReady)
@@ -56,10 +115,10 @@ internal sealed partial class MainForm
             }
         };
         _chapterTab.Controls.Add(setCurrentStartButton);
-        var addButton = Theme.MakeButton("チャプターを追加", 535, 58, 140, 32);
+        var addButton = Theme.MakeButton("チャプターを追加", 520, 100, 140, 32);
         addButton.Click += (_, _) => AddChapter();
         _chapterTab.Controls.Add(addButton);
-        var removeButton = Theme.MakeButton("選択を削除", 683, 58, 105, 32);
+        var removeButton = Theme.MakeButton("選択を削除", 668, 100, 105, 32);
         removeButton.Click += (_, _) =>
         {
             var idx = _chapterSelectedIndex;
@@ -111,7 +170,7 @@ internal sealed partial class MainForm
 
         _chapterGroup = new Panel
         {
-            Location = new Point(520, 103),
+            Location = new Point(520, 145),
             Size = new Size(510, 551),
             BorderStyle = BorderStyle.FixedSingle,
             BackColor = Theme.PageBack,
@@ -131,6 +190,11 @@ internal sealed partial class MainForm
             AutoScroll = true,
         };
         _chapterGroup.Controls.Add(_chapterRowsPanel);
+        // チャプターファイルは、一覧の内枠へドラッグ＆ドロップしても読み込める。
+        _chapterRowsPanel.AllowDrop = true;
+        _chapterRowsPanel.DragEnter += ChapterFileDragEnter;
+        _chapterRowsPanel.DragOver += ChapterFileDragOver;
+        _chapterRowsPanel.DragDrop += ChapterFileDragDrop;
         _chapterRowsPanel.Resize += (_, _) =>
         {
             // スクロールバーの有無で変わる表示幅に、行と名前欄の幅を合わせる。
@@ -207,6 +271,14 @@ internal sealed partial class MainForm
                 rowPanel.Controls.Add(nameBox);
                 _chapterRowsPanel.Controls.Add(rowPanel);
 
+                rowPanel.AllowDrop = true;
+                rowPanel.DragEnter += ChapterFileDragEnter;
+                rowPanel.DragOver += ChapterFileDragOver;
+                rowPanel.DragDrop += ChapterFileDragDrop;
+                timeLabel.AllowDrop = true;
+                timeLabel.DragEnter += ChapterFileDragEnter;
+                timeLabel.DragOver += ChapterFileDragOver;
+                timeLabel.DragDrop += ChapterFileDragDrop;
                 timeLabel.Click += (_, _) => SelectChapterRow(index);
                 timeLabel.DoubleClick += (_, _) =>
                 {
@@ -335,6 +407,129 @@ internal sealed partial class MainForm
     // .xchp の読み書き
     // ------------------------------------------------------------------
 
+    private void ChapterFileDragEnter(object? sender, DragEventArgs e)
+    {
+        e.Effect = e.Data?.GetDataPresent(DataFormats.FileDrop) == true ? DragDropEffects.Copy : DragDropEffects.None;
+    }
+
+    private void ChapterFileDragOver(object? sender, DragEventArgs e)
+    {
+        e.Effect = e.Data?.GetDataPresent(DataFormats.FileDrop) == true ? DragDropEffects.Copy : DragDropEffects.None;
+    }
+
+    private void ChapterFileDragDrop(object? sender, DragEventArgs e)
+    {
+        if (e.Data?.GetData(DataFormats.FileDrop) is string[] { Length: > 0 } files) LoadChapterFile(files[0]);
+    }
+
+    // 入力チャプターボックスの「読み込み」。
+    private void LoadChapterRequested()
+    {
+        var path = _chapterPathBox.Text.Trim();
+        if (path.Length == 0)
+        {
+            SetStatus("入力チャプターを選択してください。");
+            return;
+        }
+        LoadChapterFile(path);
+    }
+
+    private void BrowseChapterFile()
+    {
+        using var dialog = new OpenFileDialog
+        {
+            Filter = "チャプターファイル|*.xchp;*.xml|すべてのファイル (*.*)|*.*",
+            Title = "入力チャプターを選択",
+        };
+        if (dialog.ShowDialog(this) == DialogResult.OK) LoadChapterFile(dialog.FileName);
+    }
+
+    // チャプターファイル (.xchp / Matroska チャプター XML) を読み込んで一覧へ反映する。
+    private void LoadChapterFile(string path)
+    {
+        path = path.Trim().Trim('"');
+        if (!File.Exists(path))
+        {
+            MessageBox.Show("チャプターファイルが見つかりません。", AppTitle, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+        var extension = Path.GetExtension(path);
+        var isXml = extension.Equals(".xml", StringComparison.OrdinalIgnoreCase);
+        if (!isXml && !extension.Equals(".xchp", StringComparison.OrdinalIgnoreCase))
+        {
+            MessageBox.Show("対応していないチャプターファイルです (.xchp / .xml)。", AppTitle, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+        try
+        {
+            var parsed = isXml ? ParseMkvChaptersXml(path) : ParseXchpChapterFile(path);
+            _chapters.Clear();
+            foreach (var chapter in parsed)
+            {
+                if (FindChapterIndexByStartMs(chapter.StartMs) >= 0) continue;
+                _chapters.Add(chapter);
+            }
+            SortChapters();
+            RefreshChapterList();
+            _chapterPathBox.Text = path;
+            AddChapterInputHistory(path);
+            WriteLog($"チャプターファイルを読み込み: {path} ({_chapters.Count} 件)");
+            SetStatus("チャプターファイルを読み込みました");
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"チャプターファイルを読み込めませんでした: {ex.Message}", AppTitle, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+    }
+
+    private static List<Chapter> ParseXchpChapterFile(string path)
+    {
+        var chapters = new List<Chapter>();
+        foreach (var line in File.ReadAllLines(path, Encoding.UTF8))
+        {
+            if (string.IsNullOrWhiteSpace(line)) continue;
+            var parsed = ConvertFromXchpLine(line);
+            if (parsed != null) chapters.Add(parsed);
+        }
+        return chapters;
+    }
+
+    // Matroska チャプター XML (「MKV チャプターを出力 (.xml)」や mkvmerge が書き出す形式) を読み込む。
+    private static List<Chapter> ParseMkvChaptersXml(string path)
+    {
+        var doc = new XmlDocument();
+        doc.Load(path);
+        var chapters = new List<Chapter>();
+        var atoms = doc.SelectNodes("//ChapterAtom");
+        if (atoms == null) return chapters;
+        foreach (XmlNode atom in atoms)
+        {
+            var startText = atom.SelectSingleNode("ChapterTimeStart")?.InnerText;
+            if (startText == null || !TryParseMkvChapterTime(startText, out var startMs)) continue;
+            var name = atom.SelectSingleNode("ChapterDisplay/ChapterString")?.InnerText ?? "";
+            chapters.Add(new Chapter { StartMs = startMs, Name = name });
+        }
+        return chapters;
+    }
+
+    private static bool TryParseMkvChapterTime(string text, out long startMs)
+    {
+        startMs = 0;
+        var match = Regex.Match(text.Trim(), @"^(\d+):(\d{1,2}):(\d{1,2})(?:\.(\d+))?$");
+        if (!match.Success) return false;
+        var hours = long.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture);
+        var minutes = long.Parse(match.Groups[2].Value, CultureInfo.InvariantCulture);
+        var seconds = long.Parse(match.Groups[3].Value, CultureInfo.InvariantCulture);
+        var fractionMs = 0L;
+        if (match.Groups[4].Success)
+        {
+            var fraction = (match.Groups[4].Value + "000").Substring(0, 3);
+            fractionMs = long.Parse(fraction, CultureInfo.InvariantCulture);
+        }
+        startMs = ((hours * 60 + minutes) * 60 + seconds) * 1000 + fractionMs;
+        return true;
+    }
+
     private static Chapter? ConvertFromXchpLine(string line)
     {
         // .xchp の 1 行: 「HH:MM:SS,ddd 名前」 (名前は省略可。区切りはカンマでもドットでも受け付ける)
@@ -362,6 +557,7 @@ internal sealed partial class MainForm
         _chapterStartBox.Text = "00:00:00.000";
         var chapterFile = GetChapterFilePathForVideo(videoPath);
         _chapterOutputPathBox.Text = chapterFile.Length > 0 ? Path.GetDirectoryName(chapterFile) ?? "" : "";
+        _chapterPathBox.Text = chapterFile.Length > 0 && File.Exists(chapterFile) ? chapterFile : "";
         if (chapterFile.Length == 0 || !File.Exists(chapterFile)) return;
         var loaded = 0;
         var skipped = 0;
