@@ -19,6 +19,9 @@ internal sealed partial class MainForm
     private static extern IntPtr GetFocus();
 
     [DllImport("user32.dll")]
+    private static extern IntPtr GetForegroundWindow();
+
+    [DllImport("user32.dll")]
     private static extern IntPtr WindowFromPoint(Point point);
 
     [DllImport("user32.dll")]
@@ -36,6 +39,31 @@ internal sealed partial class MainForm
     [DllImport("user32.dll")]
     private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int x, int y, int cx, int cy, uint uFlags);
 
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern IntPtr SetWindowsHookEx(int idHook, PreviewWheelHookProc lpfn, IntPtr hMod, uint dwThreadId);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool UnhookWindowsHookEx(IntPtr hhk);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr CallNextHookEx(IntPtr hhk, int nCode, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+    private static extern IntPtr GetModuleHandle(string? lpModuleName);
+
+    private delegate IntPtr PreviewWheelHookProc(int nCode, IntPtr wParam, IntPtr lParam);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct PreviewWheelHookInfo
+    {
+        public Point Pt;
+        public uint MouseData;
+        public uint Flags;
+        public uint Time;
+        public IntPtr ExtraInfo;
+    }
+
     private System.Windows.Forms.Timer _previewDragTimer = null!;
     private string _previewPointerState = "idle";
     private bool _spaceKeyWasDown;
@@ -52,6 +80,10 @@ internal sealed partial class MainForm
     private long _previewLastClickTicks;
     private Point _previewLastClickPos;
     private Size? _previewZoomRestoreSize;
+    private IntPtr _previewWheelHook;
+    private PreviewWheelHookProc? _previewWheelHookProc;
+    private int _previewWheelPendingDelta;
+    private int _previewWheelRemainder;
 
     private bool TestPreviewPointerTarget()
     {
@@ -86,6 +118,80 @@ internal sealed partial class MainForm
             if (handle == _mpvHostPanel.Handle) return true;
         }
         return false;
+    }
+
+    // 映像の上のマウスホイールは mpv の子ウィンドウが受けてしまうため、低レベルフックで拾い、
+    // 実際の移動は 20ms のポーリング側 (UpdatePreviewWheel) で行う。
+    private const int WhMouseLl = 14;
+    private const int WmMouseWheelMessage = 0x020A;
+
+    private void InstallPreviewWheelHook()
+    {
+        _previewWheelHookProc = PreviewWheelHookCallback;
+        _previewWheelHook = SetWindowsHookEx(WhMouseLl, _previewWheelHookProc, GetModuleHandle(null), 0);
+    }
+
+    private void RemovePreviewWheelHook()
+    {
+        if (_previewWheelHook != IntPtr.Zero)
+        {
+            UnhookWindowsHookEx(_previewWheelHook);
+            _previewWheelHook = IntPtr.Zero;
+        }
+        _previewWheelHookProc = null;
+    }
+
+    private IntPtr PreviewWheelHookCallback(int nCode, IntPtr wParam, IntPtr lParam)
+    {
+        if (nCode >= 0 && wParam == (IntPtr)WmMouseWheelMessage && _previewReady)
+        {
+            var info = Marshal.PtrToStructure<PreviewWheelHookInfo>(lParam);
+            var delta = (short)(info.MouseData >> 16);
+            if (delta != 0 && IsPreviewWheelTarget(info.Pt))
+            {
+                _previewWheelPendingDelta += delta;
+                return (IntPtr)1;
+            }
+        }
+        return CallNextHookEx(_previewWheelHook, nCode, wParam, lParam);
+    }
+
+    private bool IsPreviewWheelTarget(Point screenPoint)
+    {
+        // 映像を表示している画面 (メイン画面 / ポップアップ / クリッピング画面) が前面で、
+        // ポインターが映像の範囲内にあるときだけ対象にする。
+        if (_mpvHostPanel.IsDisposed || !_mpvHostPanel.IsHandleCreated || !_mpvHostPanel.Visible) return false;
+        if (_mpvHostPanel.TopLevelControl is not Form host || !host.Visible) return false;
+        if (GetForegroundWindow() != host.Handle) return false;
+        if (!IsPointerOverPreviewWindow(screenPoint)) return false;
+        var rect = _mpvHostPanel.RectangleToScreen(_mpvHostPanel.ClientRectangle);
+        return rect.Contains(screenPoint);
+    }
+
+    private void UpdatePreviewWheel()
+    {
+        var pending = _previewWheelPendingDelta;
+        if (pending == 0) return;
+        _previewWheelPendingDelta = 0;
+        if (!_previewReady) return;
+        _previewWheelRemainder += pending;
+        var notches = 0;
+        while (_previewWheelRemainder >= 120) { _previewWheelRemainder -= 120; notches--; }
+        while (_previewWheelRemainder <= -120) { _previewWheelRemainder += 120; notches++; }
+        if (notches == 0) return;
+        if (_previewIsPlaying)
+        {
+            // 再生中はホイール1ノッチで5秒移動する (上が戻る、下が進む)。
+            UpdatePlayerPositionNow();
+            var target = GetPlayerPositionTimeSpan() + TimeSpan.FromSeconds(5.0 * notches);
+            if (target < TimeSpan.Zero) target = TimeSpan.Zero;
+            SetPlayerPosition(target);
+        }
+        else
+        {
+            // 一時停止中はホイール1ノッチで1フレーム移動する (上が戻る、下が進む)。
+            MovePreviewFrame(notches);
+        }
     }
 
     /// <summary>

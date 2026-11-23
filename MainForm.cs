@@ -1152,12 +1152,14 @@ internal sealed partial class MainForm : Form
         _previewDragTimer = new System.Windows.Forms.Timer { Interval = 20 };
         _previewDragTimer.Tick += (_, _) =>
         {
+            UpdatePreviewWheel();
             UpdatePreviewPointerDrag();
             UpdatePopupPointerDrag();
             UpdateSegmentPopupPointerDrag();
             UpdateClipPointerDrag();
         };
         _previewDragTimer.Start();
+        InstallPreviewWheelHook();
 
         // スペースキーは、動画編集 / チャプタータブでは再生 / 一時停止に使う。
         KeyPreview = true;
@@ -1186,6 +1188,7 @@ internal sealed partial class MainForm : Form
             CloseInputHistoryPopup();
             _previewTimer.Stop();
             _previewDragTimer.Stop();
+            RemovePreviewWheelHook();
             _mpvPumpTimer.Stop();
             StopFrameIndexBuild();
             if (_previewPopupForm is { IsDisposed: false }) { try { _previewPopupForm.Close(); } catch { } }
