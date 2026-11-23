@@ -12,6 +12,55 @@ namespace AsterCut;
 /// 土台は標準の TrackBar ではなく Control にする。標準コントロールはキーボード操作のときに
 /// 自前のつまみを直接描くため、自前描画のはみ出し部分が跡として残ってしまうため。
 /// </summary>
+/// <summary>
+/// 保持する音声トラック用の一覧。CheckedListBox は DrawItem イベントによる
+/// オーナードローに対応していない (描画モードが無視される) ため、OnDrawItem を
+/// 書き換えて、チェックの箱とチェックマークを UI のテーマに合わせた色で描く。
+/// </summary>
+internal sealed class ThemedCheckedListBox : CheckedListBox
+{
+    protected override void OnDrawItem(DrawItemEventArgs e)
+    {
+        if (e.Index < 0 || e.Index >= Items.Count)
+        {
+            base.OnDrawItem(e);
+            return;
+        }
+        var selected = (e.State & DrawItemState.Selected) != 0;
+        using (var backBrush = new SolidBrush(selected ? Color.FromArgb(86, 74, 110) : Theme.BoxBack))
+        {
+            e.Graphics.FillRectangle(backBrush, e.Bounds);
+        }
+        var boxSize = Math.Max(13, e.Bounds.Height - 6);
+        var boxRect = new Rectangle(e.Bounds.X + 3, e.Bounds.Y + (e.Bounds.Height - boxSize) / 2, boxSize, boxSize);
+        using (var boxBrush = new SolidBrush(Theme.BoxBack))
+        {
+            e.Graphics.FillRectangle(boxBrush, boxRect);
+        }
+        using (var borderPen = new Pen(Color.FromArgb(88, 80, 110)))
+        {
+            e.Graphics.DrawRectangle(borderPen, boxRect);
+        }
+        if (GetItemCheckState(e.Index) == CheckState.Checked)
+        {
+            var points = new[]
+            {
+                new PointF(boxRect.X + boxSize * 0.20f, boxRect.Y + boxSize * 0.52f),
+                new PointF(boxRect.X + boxSize * 0.42f, boxRect.Y + boxSize * 0.74f),
+                new PointF(boxRect.X + boxSize * 0.80f, boxRect.Y + boxSize * 0.26f),
+            };
+            var oldSmoothing = e.Graphics.SmoothingMode;
+            e.Graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            using var checkPen = new Pen(Color.FromArgb(150, 128, 205), 2f);
+            e.Graphics.DrawLines(checkPen, points);
+            e.Graphics.SmoothingMode = oldSmoothing;
+        }
+        var textRect = new Rectangle(boxRect.Right + 6, e.Bounds.Y, e.Bounds.Width - (boxRect.Right + 6 - e.Bounds.X), e.Bounds.Height);
+        TextRenderer.DrawText(e.Graphics, Items[e.Index].ToString() ?? "", Font, textRect, Theme.BoxFore,
+            TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding);
+    }
+}
+
 internal class SeekTrackBar : Control
 {
     private bool _manualDragging;

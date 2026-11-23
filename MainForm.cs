@@ -430,7 +430,7 @@ internal sealed partial class MainForm : Form
             BorderStyle = BorderStyle.FixedSingle,
             BackColor = Theme.BoxBack,
         };
-        _audioList = new CheckedListBox
+        _audioList = new ThemedCheckedListBox
         {
             Location = new Point(2, 1),
             Size = new Size(971, 123),
