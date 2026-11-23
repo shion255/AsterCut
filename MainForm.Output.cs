@@ -199,7 +199,7 @@ internal sealed partial class MainForm
         _encodeSettingsGroup.Controls.Add(_containerCombo);
         _outputToolTip.SetToolTip(_containerCombo, "出力ファイルのコンテナ。WebM は映像 AV1 + 音声 Opus の組み合わせのときだけ選べます。");
 
-        _encodeRunButton = Theme.MakeButton("エンコードして出力", 16, 168, 200, 40);
+        _encodeRunButton = Theme.MakeButton("エンコードして出力", 12, 168, 160, 40);
         _encodeRunButton.Enabled = false;
         _encodeRunButton.BackColor = Theme.Accent;
         _encodeSettingsGroup.Controls.Add(_encodeRunButton);
@@ -255,7 +255,7 @@ internal sealed partial class MainForm
         _outputTab.Controls.Add(_editSummaryGroup);
         _editSummaryLabel = Theme.MakeLabel("入力動画を読み込んでください。", 12, 24, 991, 56);
         _editSummaryGroup.Controls.Add(_editSummaryLabel);
-        _outputRunButton = Theme.MakeButton("動画を出力する", 12, 98, 160, 40);
+        _outputRunButton = Theme.MakeButton("動画を出力", 12, 98, 160, 40);
         _outputRunButton.Enabled = false;
         _outputRunButton.BackColor = Theme.Accent;
         _editSummaryGroup.Controls.Add(_outputRunButton);

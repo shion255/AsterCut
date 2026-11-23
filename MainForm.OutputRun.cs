@@ -1110,7 +1110,7 @@ internal sealed partial class MainForm
         var hasSegments = _segments.Count > 0;
         WriteLog(new string('=', 60));
         WriteLog($"ユーザーが出力を開始: mode={(hasSegments ? "grouped" : "non-cut")}");
-        WriteLog($"出力方式: {(forceEncode ? "エンコードして出力 (必ず再エンコード)" : "動画を出力する (可能な限り無劣化)")}");
+        WriteLog($"出力方式: {(forceEncode ? "エンコードして出力 (必ず再エンコード)" : "動画を出力 (可能な限り無劣化)")}");
         WriteLog($"メタデータ: {(GetMapMetadataValue() == "0" ? "残す (-map_metadata 0)" : "残さない (-map_metadata -1)")}（チャプター・サムネイル・字幕はこの設定の対象外）");
         WriteLog($"編集情報メタデータ: {(_writeEditorMetadataCheckBox != null && _writeEditorMetadataCheckBox.Checked ? "書き込む (_ASTER_CUT)" : "書き込まない")}（MKV / MP4 / MOV / M4V のみ）");
         if (hasSegments) StartGroupedCut(forceEncode);
