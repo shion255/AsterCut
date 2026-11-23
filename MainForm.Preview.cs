@@ -732,8 +732,38 @@ internal sealed partial class MainForm
         if (_clipPlayButton != null) _clipPlayButton.Text = text;
     }
 
+    /// <summary>
+    /// 入力履歴の新しい方から順に、最初に存在したファイルを読み込んで再生する。
+    /// 動画を入力していない状態で再生が押されたときに使う。
+    /// </summary>
+    private async Task LoadLatestHistoryAndPlayAsync()
+    {
+        if (_loadingInput) return;
+        string? target = null;
+        foreach (var entry in _settings.InputHistory)
+        {
+            if (!string.IsNullOrWhiteSpace(entry) && File.Exists(entry)) { target = entry; break; }
+        }
+        if (target == null)
+        {
+            SetStatus("入力履歴に読み込めるファイルがありません。");
+            return;
+        }
+        await LoadInputFileAsync(target);
+        if (_probe == null) return;
+        // mpv がファイルを開き終える (プレビュー準備完了) のを待ってから再生する。
+        for (var i = 0; i < 100 && !_previewReady; i++) await Task.Delay(100);
+        if (_previewReady && !_previewIsPlaying) TogglePreviewPlayback();
+    }
+
     private void TogglePreviewPlayback()
     {
+        if (_inputPath.Length == 0 && !_loadingInput)
+        {
+            // 動画を入力していない状態で再生したら、入力履歴から読み込んで再生する。
+            _ = LoadLatestHistoryAndPlayAsync();
+            return;
+        }
         if (!_previewReady || !TestPlayerAvailable()) return;
         RestoreStepAudio();
         _previewSnapTargetIndex = -1;
