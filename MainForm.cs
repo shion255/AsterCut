@@ -366,15 +366,14 @@ internal sealed partial class MainForm : Form
         _tabs.DrawItem += Tabs_DrawItem;
 
         _sourceTab = MakeTabPage("ソース");
-        _sourceInfoGroup = Theme.MakeGroupPanel(10, 12, 1015, 342, "映像情報");
+        _sourceInfoGroup = Theme.MakeGroupPanel(10, 12, 1015, 209, "映像情報");
         // 各項目を「項目名」「値」の 2 列で、1 項目につき 1 行ずつ表示する。
         Label MakeSourceRow(string name, int y, out Label value)
         {
             var nameLabel = Theme.MakeLabel(name, 14, y, 110, 25);
             _sourceInfoGroup.Controls.Add(nameLabel);
-            value = Theme.MakeLabel("—", 132, y, 860, 25);
-            value.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-            value.AutoEllipsis = true;
+            value = Theme.MakeLabel("—", 132, y, 474, 25);
+            value.Anchor = AnchorStyles.Top | AnchorStyles.Left;
             _sourceInfoGroup.Controls.Add(value);
             return nameLabel;
         }
@@ -392,7 +391,7 @@ internal sealed partial class MainForm : Form
         {
             Text = "_ASTER_CUT (ウィンドウ表示)",
             LinkArea = new LinkArea(11, 9),
-            Location = new Point(14, 198),
+            Location = new Point(620, 30),
             Size = new Size(340, 23),
             Font = new Font(Font, FontStyle.Bold),
             ForeColor = Theme.LabelFore,
@@ -406,8 +405,8 @@ internal sealed partial class MainForm : Form
         _sourceInfoGroup.Controls.Add(metadataTitle);
         _sourceMetadataTextBox = new TextBox
         {
-            Location = new Point(14, 222),
-            Size = new Size(975, 106),
+            Location = new Point(620, 54),
+            Size = new Size(381, 141),
             Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
             Multiline = true,
             ReadOnly = true,
@@ -422,20 +421,20 @@ internal sealed partial class MainForm : Form
         _sourceInfoGroup.Controls.Add(_sourceMetadataTextBox);
         _sourceTab.Controls.Add(_sourceInfoGroup);
 
-        _audioGroup = Theme.MakeGroupPanel(10, 366, 1015, 220, "保持する音声トラック");
+        _audioGroup = Theme.MakeGroupPanel(10, 233, 1015, 353, "保持する音声トラック");
         var audioListFrame = new Panel
         {
             Location = new Point(14, 29),
-            Size = new Size(975, 125),
-            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+            Size = new Size(975, 258),
+            Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
             BorderStyle = BorderStyle.FixedSingle,
             BackColor = Theme.BoxBack,
         };
         _audioList = new ThemedCheckedListBox
         {
             Location = new Point(2, 1),
-            Size = new Size(971, 123),
-            Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
+            Size = new Size(971, 256),
+            Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
             BorderStyle = BorderStyle.None,
             CheckOnClick = true,
             BackColor = Theme.BoxBack,
@@ -452,9 +451,11 @@ internal sealed partial class MainForm : Form
             }
         };
         _audioGroup.Controls.Add(audioListFrame);
-        var audioAllButton = Theme.MakeButton("すべて保持", 14, 164, 105, 30);
+        var audioAllButton = Theme.MakeButton("すべて保持", 14, 297, 105, 30);
+        audioAllButton.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
         audioAllButton.Click += (_, _) => { for (var i = 0; i < _audioList.Items.Count; i++) _audioList.SetItemChecked(i, true); };
-        var audioNoneButton = Theme.MakeButton("すべて削除", 127, 164, 105, 30);
+        var audioNoneButton = Theme.MakeButton("すべて削除", 127, 297, 105, 30);
+        audioNoneButton.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
         audioNoneButton.Click += (_, _) => { for (var i = 0; i < _audioList.Items.Count; i++) _audioList.SetItemChecked(i, false); };
         _audioGroup.Controls.Add(audioAllButton);
         _audioGroup.Controls.Add(audioNoneButton);
@@ -1562,8 +1563,8 @@ internal sealed partial class MainForm : Form
         const int edge = 10;
         if (_sourceTab.ClientSize.Width >= 400)
         {
-            _sourceInfoGroup.SetBounds(edge, 12, _sourceTab.ClientSize.Width - edge * 2, 342);
-            _audioGroup.SetBounds(edge, 366, _sourceTab.ClientSize.Width - edge * 2, 220);
+            _sourceInfoGroup.SetBounds(edge, 12, _sourceTab.ClientSize.Width - edge * 2, 209);
+            _audioGroup.SetBounds(edge, 233, _sourceTab.ClientSize.Width - edge * 2, 353);
         }
         if (_logTab.ClientSize.Width >= 400 && _logTab.ClientSize.Height >= 300)
         {
@@ -2305,12 +2306,30 @@ internal sealed partial class MainForm : Form
     /// ソースのファイル名を表示し、全文ツールチップを付ける。
     /// ラベルの幅を文字の長さに合わせ、文字のない範囲ではツールチップが出ないようにする。
     /// </summary>
+    // 値が入りきらないときは、末尾を … で切り詰める。Label の AutoEllipsis は
+    // 省略時に描画のされ方が変わり、他の行と縦位置がずれるため使わない。
+    private static string FitTextToWidth(Font font, string text, int maxWidth)
+    {
+        if (TextRenderer.MeasureText(text, font).Width <= maxWidth) return text;
+        var trimmed = text;
+        while (trimmed.Length > 0 && TextRenderer.MeasureText(trimmed + "…", font).Width > maxWidth)
+        {
+            trimmed = trimmed[..^1];
+        }
+        return trimmed.TrimEnd() + "…";
+    }
+
+    private static string FitSourceValueText(Label label, string text)
+    {
+        return FitTextToWidth(label.Font, text, label.Width);
+    }
+
     private void SetSourceFileNameText(string text)
     {
-        _sourceFileNameValue.Text = text;
         _sourceToolTip.SetToolTip(_sourceFileNameValue, text);
         var width = TextRenderer.MeasureText(text, _sourceFileNameValue.Font).Width;
-        _sourceFileNameValue.Width = Math.Clamp(width, 0, 860);
+        _sourceFileNameValue.Text = FitTextToWidth(_sourceFileNameValue.Font, text, 474);
+        _sourceFileNameValue.Width = Math.Min(width, 474);
     }
 
     private void UpdateSourceInfoPanel()
@@ -2332,22 +2351,25 @@ internal sealed partial class MainForm : Form
 
         var containerName = _probe.FormatLongName;
         var containerId = _probe.FormatName;
-        _sourceContainerValue.Text =
+        _sourceContainerValue.Text = FitSourceValueText(_sourceContainerValue,
             containerName.Length > 0 && containerId.Length > 0 ? $"{containerName} ({containerId})" :
             containerName.Length > 0 ? containerName :
-            containerId.Length > 0 ? containerId : "不明";
+            containerId.Length > 0 ? containerId : "不明");
 
-        _sourceDurationValue.Text = _durationMs > 0 ? TimeText.FormatClockFromMs(_durationMs) : "不明";
-        if (_durationMs > 0 && TestFrameTableReady()) _sourceDurationValue.Text += $" ({_frameTimesUs!.Length}f)";
+        var durationText = _durationMs > 0 ? TimeText.FormatClockFromMs(_durationMs) : "不明";
+        if (_durationMs > 0 && TestFrameTableReady()) durationText += $" ({_frameTimesUs!.Length}f)";
+        _sourceDurationValue.Text = FitSourceValueText(_sourceDurationValue, durationText);
+        string fileSizeText;
         try
         {
             var info = new FileInfo(_inputPath);
-            _sourceFileSizeValue.Text = $"{(double)info.Length / 1048576:N2} MiB ({info.Length:N0} bytes)";
+            fileSizeText = $"{(double)info.Length / 1048576:N2} MiB ({info.Length:N0} bytes)";
         }
         catch
         {
-            _sourceFileSizeValue.Text = "取得できません";
+            fileSizeText = "取得できません";
         }
+        _sourceFileSizeValue.Text = FitSourceValueText(_sourceFileSizeValue, fileSizeText);
 
         var video = _videoStreams.Count > 0 ? _videoStreams[0] : null;
         var fps = 0.0;
@@ -2376,14 +2398,14 @@ internal sealed partial class MainForm : Form
         {
             vfrStatus = "VFR 判定中";
         }
-        _sourceFrameRateValue.Text = $"{fpsText} / {vfrStatus}";
+        _sourceFrameRateValue.Text = FitSourceValueText(_sourceFrameRateValue, $"{fpsText} / {vfrStatus}");
 
         if (video != null)
         {
-            _sourceCodecValue.Text =
+            _sourceCodecValue.Text = FitSourceValueText(_sourceCodecValue,
                 video.CodecLongName.Length > 0 && video.CodecName.Length > 0 ? $"{video.CodecLongName} ({video.CodecName})" :
                 video.CodecLongName.Length > 0 ? video.CodecLongName :
-                video.CodecName.Length > 0 ? video.CodecName : "不明";
+                video.CodecName.Length > 0 ? video.CodecName : "不明");
         }
         else
         {
