@@ -126,6 +126,35 @@ internal sealed partial class MainForm
         SeekSegmentPopupToMs(_segmentPopupStartMs + (long)Math.Round((_segmentPopupEndMs - (double)_segmentPopupStartMs) * fraction));
     }
 
+    /// <summary>区間ポップアップでフレーム移動する (再生中なら一時停止してからステップする)。</summary>
+    private void StepSegmentPopupFrame(int direction, int frames)
+    {
+        if (_segmentPopupPlaying)
+        {
+            _segmentPopupPlaying = false;
+            SendSegmentPopupMpvCommand(new object[] { "set_property", "pause", true });
+        }
+        if (frames > 1 && TestFrameTableReady())
+        {
+            // frame-back-step は続けて送ると、前のフレームへ戻る動作同士が重なって
+            // 1 フレームしか戻らないことがあるため、複数フレームの移動は
+            // フレーム表から移動先を求めてシークする。
+            var currentMs = _segmentPopupStartMs + GetSegmentPopupPositionMs();
+            // ポップアップの mpv の位置はフレーム表の時刻と 1ms 程度ずれることがあるため、
+            // 半フレーム分を足して、表示中のフレームそのものを基準にする。
+            var halfFrameUs = _previewFrameRate > 0 ? (long)(500000.0 / _previewFrameRate) : 16667L;
+            var index = FindFrameIndexAtOrBefore(currentMs * 1000L + halfFrameUs);
+            if (index >= 0)
+            {
+                var target = Math.Clamp(index + direction * frames, 0, _frameTimesUs!.Length - 1);
+                SeekSegmentPopupToMs(GetFrameFloorMs(target) - _segmentPopupStartMs);
+                return;
+            }
+        }
+        var command = direction > 0 ? "frame-step" : "frame-back-step";
+        for (var i = 0; i < frames; i++) SendSegmentPopupMpvCommand(new object[] { command });
+    }
+
     private void ToggleSegmentPopupPlayback()
     {
         _segmentPopupPlaying = !_segmentPopupPlaying;
@@ -286,9 +315,10 @@ internal sealed partial class MainForm
             }
         };
         popupSeek.Scroll += (_, _) => SeekSegmentPopupFromBar();
-        popupSeek.KeyUp += (_, _) => SeekSegmentPopupFromBar();
+        // 矢印キーと PageUp / PageDown は画面側のキー操作に使うため、離したときのシークでは戻さない。
+        popupSeek.KeyUp += (_, e) => { if (e.KeyCode is Keys.Left or Keys.Right or Keys.Up or Keys.Down or Keys.PageUp or Keys.PageDown) return; SeekSegmentPopupFromBar(); };
         // キー操作: 空白で再生・一時停止、Enter で現在の回転・速度を反映して読み込み直す、Esc で閉じる、
-        // ← / → で 5 秒戻る・進む、↑ / ↓ で前・次の区間を再生、Home で区間の先頭へ戻る。
+        // ← / → で1フレーム戻る・進む、↑ / ↓ で5フレーム戻る・進む、PageUp / PageDown で前・次の区間を再生、Home で区間の先頭へ戻る。
         popup.KeyDown += (sender, e) =>
         {
             switch (e.KeyCode)
@@ -296,10 +326,12 @@ internal sealed partial class MainForm
                 case Keys.Space: ToggleSegmentPopupPlaybackFromSpace(); break;
                 case Keys.Enter: if (_segmentPopupIndex >= 0) ShowSegmentPreviewPopup(_segmentPopupIndex); break;
                 case Keys.Escape: ((Form)sender!).Close(); break;
-                case Keys.Left: SeekSegmentPopupToMs(GetSegmentPopupPositionMs() - 5000); break;
-                case Keys.Right: SeekSegmentPopupToMs(GetSegmentPopupPositionMs() + 5000); break;
-                case Keys.Up: if (_segmentPopupIndex > 0) { ShowSegmentPreviewPopup(_segmentPopupIndex - 1); SelectSegmentIndices(_segmentPopupIndex); } break;
-                case Keys.Down: if (_segmentPopupIndex >= 0 && _segmentPopupIndex < _segments.Count - 1) { ShowSegmentPreviewPopup(_segmentPopupIndex + 1); SelectSegmentIndices(_segmentPopupIndex); } break;
+                case Keys.Left: StepSegmentPopupFrame(-1, 1); break;
+                case Keys.Right: StepSegmentPopupFrame(1, 1); break;
+                case Keys.Up: StepSegmentPopupFrame(-1, 5); break;
+                case Keys.Down: StepSegmentPopupFrame(1, 5); break;
+                case Keys.PageUp: if (_segmentPopupIndex > 0) { ShowSegmentPreviewPopup(_segmentPopupIndex - 1); SelectSegmentIndices(_segmentPopupIndex); } break;
+                case Keys.PageDown: if (_segmentPopupIndex >= 0 && _segmentPopupIndex < _segments.Count - 1) { ShowSegmentPreviewPopup(_segmentPopupIndex + 1); SelectSegmentIndices(_segmentPopupIndex); } break;
                 case Keys.Home: SeekSegmentPopupToMs(_segmentPopupStartMs); break;
                 default: return;
             }
