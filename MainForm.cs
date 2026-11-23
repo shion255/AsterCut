@@ -103,6 +103,7 @@ internal sealed partial class MainForm : Form
     private readonly Label _statusLabel;
     private readonly ToolTip _statusToolTip;
     private readonly Button _cancelButton;
+    private readonly Button _showOutputLogButton;
 
     // 入力動画の状態。
     private string _inputPath = "";
@@ -1102,6 +1103,11 @@ internal sealed partial class MainForm : Form
         _cancelButton.Enabled = false;
         _cancelButton.Click += (_, _) => CancelCurrentJob();
         bottom.Controls.Add(_cancelButton);
+        _showOutputLogButton = Theme.MakeButton("ログを表示", 872, 8, 105, 30);
+        _showOutputLogButton.Anchor = AnchorStyles.Top | AnchorStyles.Left;
+        _showOutputLogButton.Visible = false;
+        _showOutputLogButton.Click += (_, _) => ReshowOutputLogPopup();
+        bottom.Controls.Add(_showOutputLogButton);
         // ラベルは背面色で不透明に描かれるため、待機中にステータス欄の左端と重なる経過時間・終了予測のラベルに隠れないよう、ステータス欄を最前面に置く。
         bottom.Controls.SetChildIndex(_statusLabel, 0);
         bottom.Resize += (_, _) => LayoutBottomBar();
@@ -1736,6 +1742,8 @@ internal sealed partial class MainForm : Form
     private void LayoutBottomBar()
     {
         _cancelButton.Location = new Point(Math.Max(0, _cancelButton.Parent!.ClientSize.Width - 14 - _cancelButton.Width), _cancelButton.Top);
+        _showOutputLogButton.Location = new Point(_cancelButton.Left - 8 - _showOutputLogButton.Width, _showOutputLogButton.Top);
+        var statusRightLimit = _showOutputLogButton.Visible ? _showOutputLogButton.Left : _cancelButton.Left;
         var elapsedWidth = TextRenderer.MeasureText("経過 0:00:00", _jobElapsedLabel.Font).Width + 8;
         _jobElapsedLabel.Size = new Size(elapsedWidth, 26);
         var etaWidth = TextRenderer.MeasureText("終了予測 あと約 0:00:00 (00:00 終了)", _jobEtaLabel.Font).Width + 16;
@@ -1743,8 +1751,8 @@ internal sealed partial class MainForm : Form
         _jobEtaLabel.Size = new Size(etaWidth, 26);
         var minStatusWidth = TextRenderer.MeasureText("プレビュー準備完了", _statusLabel.Font).Width + 10;
         var leftLimit = _jobRunning ? _jobEtaLabel.Right + 12 : _jobAnimation.Right + 12;
-        var statusWidth = Math.Max(minStatusWidth, _cancelButton.Left - 8 - leftLimit);
-        _statusLabel.Location = new Point(_cancelButton.Left - 8 - statusWidth, 11);
+        var statusWidth = Math.Max(minStatusWidth, statusRightLimit - 8 - leftLimit);
+        _statusLabel.Location = new Point(statusRightLimit - 8 - statusWidth, 11);
         _statusLabel.Size = new Size(statusWidth, 24);
     }
 

@@ -53,6 +53,9 @@ internal sealed partial class MainForm
     private Form? _outputLogPopup;
     private TextBox? _outputLogPopupBox;
     private bool _outputLogCapture;
+    // ポップアップを閉じても再表示できるよう、その出力の間のログは別に保持する。
+    private readonly List<string> _outputLogLines = new();
+    private bool _outputLogPopupSession;
 
     private string GetFFmpegPath()
     {
@@ -383,7 +386,7 @@ internal sealed partial class MainForm
     // 出力中の実行ログポップアップ (その出力の開始から終了までのログだけを表示する)
     // ------------------------------------------------------------------
 
-    private void OpenOutputLogPopup()
+    private void EnsureOutputLogPopup()
     {
         if (_outputLogPopup == null || _outputLogPopup.IsDisposed)
         {
@@ -424,11 +427,18 @@ internal sealed partial class MainForm
             _outputLogPopup = popup;
             _outputLogPopupBox = box;
         }
+    }
+
+    private void OpenOutputLogPopup()
+    {
+        EnsureOutputLogPopup();
+        _outputLogLines.Clear();
         _outputLogPopupBox!.Clear();
-        _outputLogPopup.Text = "動画出力中";
+        _outputLogPopup!.Text = "動画出力中";
         // 大きさは記憶しないため、開くたびに既定の大きさへ戻す。
         _outputLogPopup.Size = new Size(940, 550);
         _outputLogCapture = true;
+        _outputLogPopupSession = true;
         if (!_outputLogPopup.Visible)
         {
             _outputLogPopup.StartPosition = FormStartPosition.Manual;
@@ -437,10 +447,44 @@ internal sealed partial class MainForm
                 Math.Max(0, Location.Y + (Height - _outputLogPopup.Height) / 2));
             _outputLogPopup.Show(this);
         }
+        _showOutputLogButton.Visible = true;
+        LayoutBottomBar();
+    }
+
+    /// <summary>出力中に閉じた (または裏に隠れた) 実行ログポップアップを再表示する。</summary>
+    private void ReshowOutputLogPopup()
+    {
+        if (!_outputLogPopupSession) return;
+        if (_outputLogPopup == null || _outputLogPopup.IsDisposed)
+        {
+            EnsureOutputLogPopup();
+            // 作り直した場合は、保持しておいたその出力のログを復元する。
+            _outputLogPopupBox!.Text = _outputLogLines.Count == 0 ? "" : string.Join("\r\n", _outputLogLines) + "\r\n";
+            _outputLogPopupBox.SelectionStart = _outputLogPopupBox.TextLength;
+            _outputLogPopupBox.SelectionLength = 0;
+            _outputLogPopupBox.ScrollToCaret();
+            _outputLogPopup!.Text = "動画出力中";
+            _outputLogPopup.Size = new Size(940, 550);
+            _outputLogCapture = true;
+        }
+        if (!_outputLogPopup!.Visible)
+        {
+            _outputLogPopup.StartPosition = FormStartPosition.Manual;
+            _outputLogPopup.Location = new Point(
+                Math.Max(0, Location.X + (Width - _outputLogPopup.Width) / 2),
+                Math.Max(0, Location.Y + (Height - _outputLogPopup.Height) / 2));
+            _outputLogPopup.Show(this);
+        }
+        _outputLogPopup.Activate();
     }
 
     private void AppendOutputLogPopupLine(string line)
     {
+        if (_outputLogPopupSession)
+        {
+            _outputLogLines.Add(line);
+            if (_outputLogLines.Count > 1500) _outputLogLines.RemoveRange(0, _outputLogLines.Count - 1000);
+        }
         if (!_outputLogCapture) return;
         var box = _outputLogPopupBox;
         if (box == null || box.IsDisposed) return;
@@ -458,6 +502,9 @@ internal sealed partial class MainForm
     private void FinishOutputLogPopup(bool success)
     {
         _outputLogCapture = false;
+        _outputLogPopupSession = false;
+        _showOutputLogButton.Visible = false;
+        LayoutBottomBar();
         var popup = _outputLogPopup;
         if (popup == null || popup.IsDisposed) return;
         if (success && _settings.AutoCloseOutputLogPopup)
