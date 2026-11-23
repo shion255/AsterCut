@@ -73,8 +73,22 @@ internal sealed partial class MainForm
         if (_segmentPopupForm == null || _segmentPopupForm.IsDisposed) return;
         var lengthMs = Math.Max(0L, _segmentPopupEndMs - _segmentPopupStartMs);
         var elapsedMs = Math.Max(0L, Math.Min(lengthMs, positionMs - _segmentPopupStartMs));
-        var title = $"AsterCut - 区間プレビュー ({TimeText.FormatClockFromMs(elapsedMs)} / {TimeText.FormatClockFromMs(lengthMs)})";
+        var title = $"AsterCut - 区間プレビュー {TimeText.FormatClockFromMs(elapsedMs)} / {TimeText.FormatClockFromMs(lengthMs)}{GetSegmentPopupFrameInfoText(positionMs)}";
         if (_segmentPopupForm.Text != title) _segmentPopupForm.Text = title;
+    }
+
+    /// <summary>
+    /// タイトルバーに付ける、区間内のフレーム番号の文字列 (本体のプレビューと同じ形式)。
+    /// フレーム表ができているときだけ、区間先頭からのフレーム番号と区間のフレーム数を付ける。
+    /// </summary>
+    private string GetSegmentPopupFrameInfoText(long positionMs)
+    {
+        if (!TestFrameTableReady()) return "";
+        var startIndex = FindFrameIndexAtOrBefore(_segmentPopupStartMs * 1000L + 999L);
+        var endIndex = FindFrameIndexAtOrBefore(_segmentPopupEndMs * 1000L + 999L);
+        if (startIndex < 0 || endIndex < startIndex) return "";
+        var currentIndex = Math.Clamp(FindFrameIndexAtOrBefore(positionMs * 1000L + 999L), startIndex, endIndex);
+        return $" ({currentIndex - startIndex}f / {endIndex - startIndex + 1}f)";
     }
 
     private void UpdateSegmentPopupSeekBar(long positionMs)
