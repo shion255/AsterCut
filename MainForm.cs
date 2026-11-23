@@ -542,6 +542,7 @@ internal sealed partial class MainForm : Form
             Size = new Size(260, 34),
         };
         _volumeTrackBar.Scroll += (_, _) => SetPreviewVolumeFromTrackBar(_volumeTrackBar);
+        _volumeTrackBar.KeyDown += (_, e) => HandleVolumeTrackBarKeyDown(_volumeTrackBar, e);
         _volumeTrackBar.MouseUp += (_, _) => SaveSettingsFromUi();
         _volumeTrackBar.KeyUp += (_, _) => SaveSettingsFromUi();
         _cutTab.Controls.Add(_volumeTrackBar);

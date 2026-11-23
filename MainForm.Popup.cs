@@ -236,6 +236,7 @@ internal sealed partial class MainForm
         popupSeek.KeyUp += (_, e) => HandleSeekTrackBarKeyUp(popupSeek, e);
         popupSeek.MouseWheel += (_, e) => HandleSeekTrackBarMouseWheel(e);
         popupVolume.Scroll += (_, _) => SetPreviewVolumeFromTrackBar(popupVolume);
+        popupVolume.KeyDown += (_, e) => HandleVolumeTrackBarKeyDown(popupVolume, e);
         popupVolume.MouseUp += (_, _) => SaveSettingsFromUi();
         popupVolume.KeyUp += (_, _) => SaveSettingsFromUi();
         popupMuteButton.Click += (_, _) => TogglePreviewMute();

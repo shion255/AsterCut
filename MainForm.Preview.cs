@@ -1526,6 +1526,20 @@ internal sealed partial class MainForm
         }
     }
 
+    /// <summary>音量バーの ↑ / ↓ を 5 ずつにする (← / → は SeekTrackBar 標準の 1 ずつ)。</summary>
+    private void HandleVolumeTrackBarKeyDown(SeekTrackBar trackBar, KeyEventArgs e)
+    {
+        if (e.KeyCode is not (Keys.Up or Keys.Down)) return;
+        var target = Math.Clamp(trackBar.Value + (e.KeyCode == Keys.Up ? 5 : -5), trackBar.Minimum, trackBar.Maximum);
+        if (target != trackBar.Value)
+        {
+            trackBar.Value = target;
+            SetPreviewVolumeFromTrackBar(trackBar);
+        }
+        e.Handled = true;
+        e.SuppressKeyPress = true;
+    }
+
     private void SetPreviewVolumeFromTrackBar(SeekTrackBar trackBar)
     {
         var volumeValue = Math.Clamp(trackBar.Value, 0, 100);
