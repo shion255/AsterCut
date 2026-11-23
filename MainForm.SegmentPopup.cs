@@ -126,6 +126,42 @@ internal sealed partial class MainForm
         SeekSegmentPopupToMs(_segmentPopupStartMs + (long)Math.Round((_segmentPopupEndMs - (double)_segmentPopupStartMs) * fraction));
     }
 
+    // フレームステップ中だけ mpv の mute を使うための状態。
+    private bool _segmentPopupStepAudioSuppressed;
+    private System.Windows.Forms.Timer? _segmentPopupStepAudioRestoreTimer;
+
+    /// <summary>
+    /// 一時停止中のフレーム移動で、ステップしたフレームの音が一瞬出ないようにする。
+    /// プレビュー画面のフレーム移動と同じ方式で、その間だけ mute をかけ、
+    /// 最後のステップから少し置いて戻す。
+    /// </summary>
+    internal void SuppressSegmentPopupAudioForStep()
+    {
+        if (!_segmentPopupStepAudioSuppressed)
+        {
+            _segmentPopupStepAudioSuppressed = true;
+            SendSegmentPopupMpvCommand(new object[] { "set_property", "mute", true });
+        }
+        if (_segmentPopupStepAudioRestoreTimer == null)
+        {
+            _segmentPopupStepAudioRestoreTimer = new System.Windows.Forms.Timer { Interval = 500 };
+            _segmentPopupStepAudioRestoreTimer.Tick += (_, _) =>
+            {
+                _segmentPopupStepAudioRestoreTimer?.Stop();
+                RestoreSegmentPopupStepAudio();
+            };
+        }
+        _segmentPopupStepAudioRestoreTimer.Stop();
+        _segmentPopupStepAudioRestoreTimer.Start();
+    }
+
+    private void RestoreSegmentPopupStepAudio()
+    {
+        if (!_segmentPopupStepAudioSuppressed) return;
+        _segmentPopupStepAudioSuppressed = false;
+        SendSegmentPopupMpvCommand(new object[] { "set_property", "mute", false });
+    }
+
     /// <summary>区間ポップアップでフレーム移動する (再生中なら一時停止してからステップする)。</summary>
     private void StepSegmentPopupFrame(int direction, int frames)
     {
@@ -134,6 +170,7 @@ internal sealed partial class MainForm
             _segmentPopupPlaying = false;
             SendSegmentPopupMpvCommand(new object[] { "set_property", "pause", true });
         }
+        SuppressSegmentPopupAudioForStep();
         if (frames > 1 && TestFrameTableReady())
         {
             // frame-back-step は続けて送ると、前のフレームへ戻る動作同士が重なって
@@ -366,6 +403,11 @@ internal sealed partial class MainForm
             {
                 try { _segmentPopupTimer.Stop(); _segmentPopupTimer.Dispose(); } catch { }
                 _segmentPopupTimer = null;
+            }
+            if (_segmentPopupStepAudioRestoreTimer != null)
+            {
+                try { _segmentPopupStepAudioRestoreTimer.Stop(); _segmentPopupStepAudioRestoreTimer.Dispose(); } catch { }
+                _segmentPopupStepAudioRestoreTimer = null;
             }
             if (_segmentPopupReaderCts != null)
             {
