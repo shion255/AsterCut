@@ -284,8 +284,8 @@ internal sealed partial class MainForm
                 case Keys.Escape: ((Form)sender!).Close(); break;
                 case Keys.Left: SeekSegmentPopupToMs(GetSegmentPopupPositionMs() - 5000); break;
                 case Keys.Right: SeekSegmentPopupToMs(GetSegmentPopupPositionMs() + 5000); break;
-                case Keys.Up: if (_segmentPopupIndex > 0) ShowSegmentPreviewPopup(_segmentPopupIndex - 1); break;
-                case Keys.Down: if (_segmentPopupIndex >= 0 && _segmentPopupIndex < _segments.Count - 1) ShowSegmentPreviewPopup(_segmentPopupIndex + 1); break;
+                case Keys.Up: if (_segmentPopupIndex > 0) { ShowSegmentPreviewPopup(_segmentPopupIndex - 1); SelectSegmentIndices(_segmentPopupIndex); } break;
+                case Keys.Down: if (_segmentPopupIndex >= 0 && _segmentPopupIndex < _segments.Count - 1) { ShowSegmentPreviewPopup(_segmentPopupIndex + 1); SelectSegmentIndices(_segmentPopupIndex); } break;
                 case Keys.Home: SeekSegmentPopupToMs(_segmentPopupStartMs); break;
                 default: return;
             }
