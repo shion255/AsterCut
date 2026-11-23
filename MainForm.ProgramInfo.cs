@@ -443,8 +443,9 @@ internal sealed partial class MainForm
         void ParseExtraEntries()
         {
             if (sourcePmt == null || videoPid < 0) return;
-            // データ放送 (DSM-CC) は、出力タブの「データ放送を引き継ぐ」が外れている場合は引き継がない。
-            var keepDataBroadcast = _keepDataBroadcastCheckBox == null || _keepDataBroadcastCheckBox.Checked;
+            // データ放送 (DSM-CC) は、ソースタブの「単一区間で保持するデータ」で
+            // データ放送が外れている場合は引き継がない。
+            var keepDataBroadcast = IsKeepDataChecked("databroadcast");
             var b = sourcePmt.Bytes;
             if (b.Length < 12) return;
             var sectionLength = ((b[1] & 0x0F) << 8) | b[2];

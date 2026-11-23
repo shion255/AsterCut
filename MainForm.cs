@@ -5,6 +5,7 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -46,6 +47,7 @@ internal sealed partial class MainForm : Form
 
     private readonly Panel _sourceInfoGroup;
     private readonly Panel _audioGroup;
+    private readonly Panel _keepDataGroup;
 
     // 動画編集タブのプレビューまわり (本体は MainForm.Preview.cs)。
     private readonly Panel _mpvHostPanel;
@@ -127,6 +129,9 @@ internal sealed partial class MainForm : Form
     private string _sourceFileNameFullText = "";
     private int _sourceValueMaxWidth = 474;
     private readonly CheckedListBox _audioList;
+    private readonly CheckedListBox _keepDataList;
+    // 「単一区間で保持するデータ」の行に対応するデータ種別 (行の並び順)。
+    private readonly List<string> _keepDataKinds = new();
 
     // 入力履歴ポップアップ。
     private Button _historyButton = null!;
@@ -426,11 +431,11 @@ internal sealed partial class MainForm : Form
         _sourceInfoGroup.Controls.Add(_sourceMetadataTextBox);
         _sourceTab.Controls.Add(_sourceInfoGroup);
 
-        _audioGroup = Theme.MakeGroupPanel(10, 233, 1015, 353, "保持する音声トラック");
+        _audioGroup = Theme.MakeGroupPanel(10, 233, 502, 353, "保持する音声トラック");
         var audioListFrame = new Panel
         {
             Location = new Point(14, 29),
-            Size = new Size(975, 258),
+            Size = new Size(462, 258),
             Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
             BorderStyle = BorderStyle.FixedSingle,
             BackColor = Theme.BoxBack,
@@ -438,7 +443,7 @@ internal sealed partial class MainForm : Form
         _audioList = new ThemedCheckedListBox
         {
             Location = new Point(2, 1),
-            Size = new Size(971, 256),
+            Size = new Size(458, 256),
             Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
             BorderStyle = BorderStyle.None,
             CheckOnClick = true,
@@ -465,6 +470,38 @@ internal sealed partial class MainForm : Form
         _audioGroup.Controls.Add(audioAllButton);
         _audioGroup.Controls.Add(audioNoneButton);
         _sourceTab.Controls.Add(_audioGroup);
+
+        _keepDataGroup = Theme.MakeGroupPanel(522, 233, 503, 353, "単一区間で保持するデータ");
+        var keepDataListFrame = new Panel
+        {
+            Location = new Point(14, 29),
+            Size = new Size(463, 258),
+            Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
+            BorderStyle = BorderStyle.FixedSingle,
+            BackColor = Theme.BoxBack,
+        };
+        _keepDataList = new ThemedCheckedListBox
+        {
+            Location = new Point(2, 1),
+            Size = new Size(459, 256),
+            Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
+            BorderStyle = BorderStyle.None,
+            CheckOnClick = true,
+            BackColor = Theme.BoxBack,
+            ForeColor = Theme.BoxFore,
+        };
+        keepDataListFrame.Controls.Add(_keepDataList);
+        Theme.ApplyDarkScrollBars(_keepDataList);
+        _keepDataGroup.Controls.Add(keepDataListFrame);
+        var keepDataAllButton = Theme.MakeButton("すべて保持", 14, 297, 105, 30);
+        keepDataAllButton.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
+        keepDataAllButton.Click += (_, _) => { for (var i = 0; i < _keepDataList.Items.Count; i++) _keepDataList.SetItemChecked(i, true); };
+        var keepDataNoneButton = Theme.MakeButton("すべて削除", 127, 297, 105, 30);
+        keepDataNoneButton.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
+        keepDataNoneButton.Click += (_, _) => { for (var i = 0; i < _keepDataList.Items.Count; i++) _keepDataList.SetItemChecked(i, false); };
+        _keepDataGroup.Controls.Add(keepDataAllButton);
+        _keepDataGroup.Controls.Add(keepDataNoneButton);
+        _sourceTab.Controls.Add(_keepDataGroup);
 
         _cutTab = MakeTabPage("動画編集");
         // mpv 用の映像表示領域。mpv.exe は --wid でこのパネルの子ウィンドウとして描画する。
@@ -1569,7 +1606,9 @@ internal sealed partial class MainForm : Form
         if (_sourceTab.ClientSize.Width >= 400)
         {
             _sourceInfoGroup.SetBounds(edge, 12, _sourceTab.ClientSize.Width - edge * 2, 209);
-            _audioGroup.SetBounds(edge, 233, _sourceTab.ClientSize.Width - edge * 2, 353);
+            var keepGroupWidth = (_sourceTab.ClientSize.Width - edge * 2 - 10) / 2;
+            _audioGroup.SetBounds(edge, 233, keepGroupWidth, 353);
+            _keepDataGroup.SetBounds(edge + keepGroupWidth + 10, 233, _sourceTab.ClientSize.Width - edge * 2 - keepGroupWidth - 10, 353);
             LayoutSourceInfoColumns(_sourceTab.ClientSize.Width - edge * 2);
         }
         if (_logTab.ClientSize.Width >= 400 && _logTab.ClientSize.Height >= 300)
@@ -2238,8 +2277,8 @@ internal sealed partial class MainForm : Form
             _audioStreams = new List<ProbeStream>();
             _durationMs = 0;
             UpdateAudioList();
+            UpdateKeepDataList();
             UpdateSourceInfoPanel();
-            UpdateDataBroadcastCheckBoxStyle();
 
             var ffprobe = GetFfprobePath();
             var probe = await Probe.InvokeAsync(ffprobe, _inputPath);
@@ -2255,8 +2294,8 @@ internal sealed partial class MainForm : Form
             _durationMs = Math.Max(0L, (long)Math.Round(duration * 1000));
 
             UpdateAudioList();
+            UpdateKeepDataList();
             UpdateSourceInfoPanel();
-            UpdateDataBroadcastCheckBoxStyle();
             ClearSegmentsForNewInput();
             _cutEndBox.Text = _durationMs > 0 ? TimeText.FormatClockFromMs(_durationMs) : "00:00:00.000";
             SetPreviewSource(_inputPath);
@@ -2327,7 +2366,7 @@ internal sealed partial class MainForm : Form
             var channels = stream.Channels > 0 ? $" {stream.Channels}ch" : "";
             var lang = stream.Tag("language").Length > 0 ? $" / {stream.Tag("language")}" : "";
             var title = stream.Tag("title").Length > 0 ? $" / {stream.Tag("title")}" : "";
-            _audioList.Items.Add($"Audio {n + 1}  |  {codec}{channels}{lang}{title}");
+            _audioList.Items.Add($"Audio {n + 1} - {codec}{channels}{lang}{title}");
             _audioList.SetItemChecked(_audioList.Items.Count - 1, true);
             n++;
         }
@@ -2335,6 +2374,65 @@ internal sealed partial class MainForm : Form
         {
             _audioList.Items.Add("(音声トラックなし)");
         }
+    }
+
+    private List<ProbeStream> GetSubtitleStreams()
+        => _probe?.Streams.FindAll(s => s.CodecType == "subtitle") ?? new List<ProbeStream>();
+
+    private List<ProbeStream> GetAttachedPicStreams()
+        => _probe?.Streams.FindAll(s => s.CodecType == "video" && s.AttachedPic == 1) ?? new List<ProbeStream>();
+
+    private List<ProbeStream> GetAttachmentStreams()
+        => _probe?.Streams.FindAll(s => s.CodecType == "attachment") ?? new List<ProbeStream>();
+
+    /// <summary>入力にデータ放送 (DSM-CC) のストリームが含まれるか。PMT の stream_type が 0x0D のストリームで判定する。</summary>
+    private bool HasDataBroadcast()
+        => _probe != null
+            && (_probe.FormatName ?? "").Contains("mpegts", StringComparison.OrdinalIgnoreCase)
+            && _probe.Streams.Exists(s => string.Equals(s.CodecTag, "0x000d", StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>入力にサムネイルとして扱えるデータ (添付画像、または MKV のカバー画像添付) があるか。</summary>
+    private bool HasThumbnailData()
+        => GetAttachedPicStreams().Count > 0
+            || GetAttachmentStreams().Exists(s => s.Tag("filename").StartsWith("cover.", StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// 「単一区間で保持するデータ」の一覧を、入力に含まれるデータの行だけで組み直す。
+    /// 行は サムネイル・字幕・チャプター・番組情報・データ放送 の順で、全て保持する状態にする。
+    /// </summary>
+    private void UpdateKeepDataList()
+    {
+        _keepDataList.Items.Clear();
+        _keepDataKinds.Clear();
+        if (_probe == null) return;
+        void AddRow(string kind, string text)
+        {
+            _keepDataList.Items.Add(text);
+            _keepDataList.SetItemChecked(_keepDataList.Items.Count - 1, true);
+            _keepDataKinds.Add(kind);
+        }
+        if (HasThumbnailData()) AddRow("thumbnail", "サムネイル");
+        var subtitles = GetSubtitleStreams();
+        if (subtitles.Count > 0)
+        {
+            var details = subtitles.Select(s =>
+            {
+                var codec = s.CodecName.Length > 0 ? s.CodecName : "unknown codec";
+                var lang = s.Tag("language").Length > 0 ? $" / {s.Tag("language")}" : "";
+                return codec + lang;
+            });
+            AddRow("subtitle", $"字幕 - {string.Join(", ", details)}");
+        }
+        if (_probe.Chapters.Count > 0) AddRow("chapter", $"チャプター - {_probe.Chapters.Count} 件");
+        if (IsTsSourceContainer()) AddRow("programinfo", "番組情報");
+        if (HasDataBroadcast()) AddRow("databroadcast", "データ放送");
+    }
+
+    /// <summary>指定した種別のデータを保持する設定か。そのデータが入力に無い場合は false。</summary>
+    private bool IsKeepDataChecked(string kind)
+    {
+        var index = _keepDataKinds.IndexOf(kind);
+        return index >= 0 && index < _keepDataList.Items.Count && _keepDataList.GetItemChecked(index);
     }
 
     /// <summary>
@@ -2723,8 +2821,9 @@ internal sealed partial class MainForm : Form
         _videoStreams = new List<ProbeStream>();
         _audioStreams = new List<ProbeStream>();
         _durationMs = 0;
-        UpdateDataBroadcastCheckBoxStyle();
         _audioList.Items.Clear();
+        _keepDataList.Items.Clear();
+        _keepDataKinds.Clear();
         CloseSegmentPreviewPopup();
         CloseClippingForm();
         ClearSegmentsForNewInput();

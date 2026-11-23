@@ -44,12 +44,18 @@ internal sealed partial class MainForm
         {
             if (i < _audioList.Items.Count && _audioList.GetItemChecked(i)) selectedAudio.Add(i);
         }
+        var keepDataKinds = new List<string>();
+        for (var i = 0; i < _keepDataKinds.Count; i++)
+        {
+            if (i < _keepDataList.Items.Count && _keepDataList.GetItemChecked(i)) keepDataKinds.Add(_keepDataKinds[i]);
+        }
         var clip = _clipCurrent;
         return new EditState
         {
             InputPath = _inputPath,
             Segments = segments,
             SelectedAudioIndices = selectedAudio,
+            KeepDataKinds = keepDataKinds,
             Speed = _speedValue.ToString("0.00", CultureInfo.InvariantCulture),
             RotationIndex = GetRotationIndex(),
             CutStartText = _cutStartBox.Text,
@@ -76,7 +82,6 @@ internal sealed partial class MainForm
             AppendSuffix = _appendSuffixCheckBox.Checked,
             KeepMetadata = _keepMetadataCheckBox.Checked,
             WriteEditorMetadata = _writeEditorMetadataCheckBox.Checked,
-            KeepDataBroadcast = _keepDataBroadcastCheckBox.Checked,
         };
     }
 
@@ -143,6 +148,14 @@ internal sealed partial class MainForm
                 if (i < _audioList.Items.Count) _audioList.SetItemChecked(i, state.SelectedAudioIndices.Contains(i));
             }
         }
+        // 単一区間で保持するデータ
+        if (state.KeepDataKinds != null)
+        {
+            for (var i = 0; i < _keepDataKinds.Count; i++)
+            {
+                if (i < _keepDataList.Items.Count) _keepDataList.SetItemChecked(i, state.KeepDataKinds.Contains(_keepDataKinds[i]));
+            }
+        }
         // 再生速度・回転 (変更で出力名が再計算されるため、出力先の復元より先に適用する)
         if (state.Speed.Length > 0)
         {
@@ -198,7 +211,6 @@ internal sealed partial class MainForm
         if (state.AppendSuffix != null) _appendSuffixCheckBox.Checked = state.AppendSuffix.Value;
         if (state.KeepMetadata != null) _keepMetadataCheckBox.Checked = state.KeepMetadata.Value;
         if (state.WriteEditorMetadata != null) _writeEditorMetadataCheckBox.Checked = state.WriteEditorMetadata.Value;
-        if (state.KeepDataBroadcast != null) _keepDataBroadcastCheckBox.Checked = state.KeepDataBroadcast.Value;
         // 出力する処理は区間とグループ分けから決まるため、ここでは選択済みフラグだけを復元する。
         _outputModeUserSelected = state.OutputModeUserSelected;
         // 出力先フォルダー: 新形式はフォルダーパスそのもの、旧形式 (ファイルパス) はフォルダー部分だけを使う。

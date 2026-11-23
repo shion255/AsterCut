@@ -293,6 +293,14 @@ internal sealed class AppSettings
                 if (audio.TryGetInt32(out var index)) result.SelectedAudioIndices.Add(index);
             }
         }
+        if (state.TryGetProperty("KeepDataKinds", out var kinds) && kinds.ValueKind == JsonValueKind.Array)
+        {
+            result.KeepDataKinds = new List<string>();
+            foreach (var kind in kinds.EnumerateArray())
+            {
+                if (kind.ValueKind == JsonValueKind.String && kind.GetString() is { Length: > 0 } name) result.KeepDataKinds.Add(name);
+            }
+        }
         return result;
     }
 
@@ -341,6 +349,7 @@ internal sealed class EditState
     public string InputPath { get; set; } = "";
     public List<EditSegmentState>? Segments { get; set; }
     public List<int>? SelectedAudioIndices { get; set; }
+    public List<string>? KeepDataKinds { get; set; }
     public string Speed { get; set; } = "";
     public int? RotationIndex { get; set; }
     public string CutStartText { get; set; } = "";

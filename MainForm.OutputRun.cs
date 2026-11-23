@@ -31,6 +31,9 @@ internal sealed partial class MainForm
         public string ProgramInfoSourcePath = "";
         public long ProgramInfoStartMs;
         public long ProgramInfoEndMs;
+        // ステップの実行中だけ必要な一時ファイル (チャプターの ffmetadata など)。
+        // ステップ開始時に書き出し、終了時に消す。
+        public List<(string Path, string Content)> TempFileContents = new();
     }
 
     private bool _jobRunning;
@@ -175,6 +178,10 @@ internal sealed partial class MainForm
         var step = _currentPlan[_planIndex];
         try
         {
+            foreach (var (tempPath, tempContent) in step.TempFileContents)
+            {
+                File.WriteAllText(tempPath, tempContent, new UTF8Encoding(false));
+            }
             var exe = GetFFmpegPath();
             var psi = new ProcessStartInfo
             {
@@ -199,8 +206,17 @@ internal sealed partial class MainForm
         }
         catch (Exception ex)
         {
+            DeleteStepTempFiles(step);
             WriteLog($"起動エラー: {ex.Message}");
             FinishPlan(false, "FFmpeg の起動に失敗しました。");
+        }
+    }
+
+    private static void DeleteStepTempFiles(JobStep step)
+    {
+        foreach (var (tempPath, _) in step.TempFileContents)
+        {
+            try { if (File.Exists(tempPath)) File.Delete(tempPath); } catch { }
         }
     }
 
@@ -234,6 +250,7 @@ internal sealed partial class MainForm
         try { process.Dispose(); } catch { }
         _currentProcess = null;
         _currentErrorReadTask = null;
+        if (_planIndex < _currentPlan.Count) DeleteStepTempFiles(_currentPlan[_planIndex]);
         if (_cancelRequested)
         {
             FinishPlan(false, "処理はユーザーによってキャンセルされました。");
@@ -591,6 +608,170 @@ internal sealed partial class MainForm
     // ------------------------------------------------------------------
 
     private string GetMapMetadataValue() => _keepMetadataCheckBox != null && !_keepMetadataCheckBox.Checked ? "-1" : "0";
+
+    // ------------------------------------------------------------------
+    // 単一区間で保持するデータ (サムネイル・字幕・チャプター)
+    // ------------------------------------------------------------------
+
+    private static bool IsTextSubtitleCodec(string codecName)
+        => codecName.ToLowerInvariant() is "subrip" or "ass" or "ssa" or "mov_text" or "webvtt" or "text";
+
+    /// <summary>字幕をそのコンテナへ保持するときのコーデック指定を返す。保持できない場合は null。</summary>
+    private static string? GetSubtitleOutputCodec(string outputExt, ProbeStream subtitle)
+    {
+        var isText = IsTextSubtitleCodec(subtitle.CodecName);
+        return outputExt switch
+        {
+            ".mkv" => "copy",
+            ".mp4" or ".mov" or ".m4v" => isText ? "mov_text" : null,
+            ".webm" => isText ? "webvtt" : null,
+            // TS などへは字幕ストリームを保持しない (放送 TS の字幕は番組情報の移植の担当)。
+            _ => null,
+        };
+    }
+
+    /// <summary>字幕ストリームの先頭パケットの位置 (アプリの時刻軸の ms)。分からなければ -1。</summary>
+    private long GetSubtitleStreamStartMs(ProbeStream subtitle) => subtitle.FirstPacketAppMs;
+
+    /// <summary>
+    /// 字幕ストリームを区間 [startMs, endMs) で切り出す trim BSF を作る。
+    /// trim の起点は、そのストリームで最初に届くパケット (ストリームの開始位置) に合わせる。
+    /// rebaseToZero の場合は、区間の開始位置が 0 になるよう setts でずらす (再エンコード経路用)。
+    /// 無劣化経路ではずらさず、経路側の全体の時刻そろえ (output_ts_offset など) に合わせる。
+    /// </summary>
+    private string? BuildSubtitleTrimBsf(ProbeStream subtitle, long startMs, long endMs, bool rebaseToZero)
+    {
+        var zeroMs = GetSubtitleStreamStartMs(subtitle);
+        if (zeroMs < 0) return null;
+        var relStart = Math.Max(0, startMs - zeroMs);
+        var duration = endMs - zeroMs - relStart;
+        if (duration <= 0) return null;
+        var filter = $"trim=start={relStart}:start_type=msec_pt:start_rel=1:end={duration}:end_type=dur_t_msec:trim_packets=1";
+        if (rebaseToZero)
+        {
+            // ずらし量は秒で指定し、タイムベース単位への換算は setts の TB に任せる
+            // (字幕のタイムベースは、変換先のコンテナで変わることがあるため)。
+            var formatStartSec = _probe != null ? Probe.ParseSeconds(_probe.FormatStartTime) : 0;
+            var shiftSec = (startMs / 1000.0 + formatStartSec).ToString("0.######", CultureInfo.InvariantCulture);
+            filter += $",setts=pts=PTS-{shiftSec}/TB:dts=DTS-{shiftSec}/TB";
+        }
+        return filter;
+    }
+
+    /// <summary>ffmetadata の値のエスケープ。</summary>
+    private static string EscapeFfmetadataValue(string value)
+    {
+        var builder = new StringBuilder();
+        foreach (var ch in value.Replace("\r\n", " ").Replace('\n', ' ').Replace('\r', ' '))
+        {
+            if (ch is '\\' or '=' or ';' or '#') builder.Append('\\');
+            builder.Append(ch);
+        }
+        return builder.ToString();
+    }
+
+    /// <summary>
+    /// 区間 [startMs, endMs) に重なるチャプターを、出力の時刻軸へ直した ffmetadata を追加の入力として
+    /// 差し込み、その入力番号を返す。対象のチャプターが無ければ -1。一時ファイルの内容は tempFiles へ
+    /// 積む (実際の書き出しはステップ開始時に行う)。
+    /// baseMs は出力の時刻軸の起点に対応する入力側の位置。再エンコード経路では区間の開始位置、
+    /// 無劣化経路では出力の先頭になるフレームの位置 (MP4 系ではカット位置) を渡す。
+    /// 区間の開始より前に始まるチャプターは、開始位置を区間の開始にそろえて残す。
+    /// </summary>
+    private int AddSegmentChaptersInput(List<string> args, long startMs, long endMs, long baseMs, List<(string Path, string Content)> tempFiles)
+    {
+        if (_probe == null) return -1;
+        var lines = new List<string> { ";FFMETADATA1" };
+        var count = 0;
+        foreach (var chapter in _probe.Chapters)
+        {
+            if (chapter.EndMs <= startMs || chapter.StartMs >= endMs) continue;
+            var start = Math.Max(startMs, chapter.StartMs) - baseMs;
+            var end = Math.Min(chapter.EndMs, endMs) - baseMs;
+            if (end <= start) continue;
+            lines.Add("[CHAPTER]");
+            lines.Add("TIMEBASE=1/1000");
+            lines.Add($"START={start}");
+            lines.Add($"END={end}");
+            if (chapter.Title.Length > 0) lines.Add($"title={EscapeFfmetadataValue(chapter.Title)}");
+            count++;
+        }
+        if (count == 0) return -1;
+        var path = Path.Combine(Path.GetTempPath(), $"AsterCut_chapters_{Guid.NewGuid():N}.txt");
+        tempFiles.Add((path, string.Join("\n", lines) + "\n"));
+        var inputIndex = 0;
+        var insertAt = args.Count;
+        for (var i = 0; i < args.Count; i++)
+        {
+            if (args[i] == "-i")
+            {
+                inputIndex++;
+                insertAt = i + 2;
+            }
+        }
+        args.Insert(insertAt, path);
+        args.Insert(insertAt, "-i");
+        return inputIndex;
+    }
+
+    /// <summary>
+    /// 保持する字幕・サムネイル・添付ファイルを、再エンコード経路の引数へ加える。
+    /// firstVideoOutputOrdinal は、すでに出力へ割り当て済みの映像ストリームの数
+    /// (サムネイルのコーデック指定の添え字に使う)。
+    /// </summary>
+    private void AddKeepDataToEncodeArgs(List<string> args, string outputExt, long startMs, long endMs, bool wholeFile, bool speedChanged, int firstVideoOutputOrdinal)
+    {
+        var keepSubtitle = IsKeepDataChecked("subtitle");
+        var keepThumbnail = IsKeepDataChecked("thumbnail");
+        if (keepSubtitle && !speedChanged)
+        {
+            var subtitles = GetSubtitleStreams();
+            var outIndex = 0;
+            for (var k = 0; k < subtitles.Count; k++)
+            {
+                var codec = GetSubtitleOutputCodec(outputExt, subtitles[k]);
+                if (codec == null) continue;
+                string? bsf = null;
+                if (!wholeFile)
+                {
+                    bsf = BuildSubtitleTrimBsf(subtitles[k], startMs, endMs, rebaseToZero: true);
+                    if (bsf == null) continue;
+                }
+                args.Add("-map");
+                args.Add($"0:s:{k}");
+                args.Add($"-c:s:{outIndex}");
+                args.Add(codec);
+                if (bsf != null)
+                {
+                    args.Add($"-bsf:s:{outIndex}");
+                    args.Add(bsf);
+                }
+                outIndex++;
+            }
+            if (outIndex > 0) WriteLog($"字幕を保持します ({outIndex} ストリーム)。");
+            else if (subtitles.Count > 0) WriteLog("字幕はこのコンテナでは保持できないため、含めません。");
+        }
+        if (keepThumbnail && outputExt is ".mkv" or ".mp4" or ".mov" or ".m4v")
+        {
+            var pics = GetAttachedPicStreams();
+            for (var i = 0; i < pics.Count; i++)
+            {
+                args.Add("-map");
+                args.Add($"0:{pics[i].Index}");
+                args.Add($"-c:v:{firstVideoOutputOrdinal + i}");
+                args.Add("copy");
+            }
+            if (pics.Count > 0) WriteLog($"サムネイルを保持します ({pics.Count} ストリーム)。");
+        }
+        // 添付ファイル (MKV のフォントなど) は、字幕かサムネイル (カバー画像) を保持するときに一緒に移す。
+        if ((keepSubtitle || keepThumbnail) && outputExt == ".mkv" && GetAttachmentStreams().Count > 0)
+        {
+            args.Add("-map");
+            args.Add("0:t");
+            args.Add("-c:t");
+            args.Add("copy");
+        }
+    }
 
     private List<ProbeStream> GetSelectedAudioStreams()
     {
@@ -1081,6 +1262,32 @@ internal sealed partial class MainForm
         return string.Join("\r\n", plainParts);
     }
 
+    /// <summary>引数が出力へサムネイル (attached pic) のコピーを含むか。</summary>
+    private bool OutputArgsCarryAttachedPic(List<string> args)
+    {
+        var pics = GetAttachedPicStreams();
+        if (pics.Count == 0) return false;
+        for (var i = 0; i + 1 < args.Count; i++)
+        {
+            if (args[i] != "-map") continue;
+            var map = args[i + 1];
+            if (map == "0")
+            {
+                // 全ストリームのコピーでは、サムネイルを保持する選択のときだけ含まれる
+                // (保持しない場合は負の map で除かれている)。
+                if (IsKeepDataChecked("thumbnail")) return true;
+            }
+            else
+            {
+                foreach (var pic in pics)
+                {
+                    if (map == $"0:{pic.Index}") return true;
+                }
+            }
+        }
+        return false;
+    }
+
     private List<string> AddEditorMetadataArgument(List<string> arguments, string outputPath, IReadOnlyList<string> metadataLines)
     {
         // 独自タグの書き込みは専用チェックボックスで制御する。「メタデータを残す」とは独立。
@@ -1118,6 +1325,14 @@ internal sealed partial class MainForm
             result.Add(arguments[i]);
         }
 
+        if (isMp4Family && OutputArgsCarryAttachedPic(result))
+        {
+            // use_metadata_tags を付けると、コピーしたサムネイル (attached pic) が MP4 へ
+            // 書き込まれずに落ちてしまう (ffmpeg の mov マクサの挙動)。サムネイルは入力の
+            // 中身そのものなので、独自タグより優先し、この出力では独自タグを書き込まない。
+            WriteLog("サムネイルを保持するため、この出力では独自タグ (_ASTER_CUT) を書き込めません。");
+            return result;
+        }
         if (isMp4Family)
         {
             // MP4 / MOV / M4V は、use_metadata_tags を指定しないと任意キーのタグが書き込まれない。
@@ -1318,6 +1533,7 @@ internal sealed partial class MainForm
                 args.AddRange(GetVideoEncoderArgs());
                 WriteLog($"映像エンコーダー: {GetVideoEncoderLogText()}");
                 args.AddRange(GetAudioEncoderArgs(selectedAudios));
+                AddKeepDataToEncodeArgs(args, ext, 0, _durationMs, wholeFile: true, speedChanged, _videoStreams.Count);
                 description = speedChanged
                     ? "動画全体の再生速度を変更して映像・選択音声を再エンコード"
                     : "動画全体を映像・選択音声とも再エンコード";
@@ -1352,6 +1568,34 @@ internal sealed partial class MainForm
                             args.Add($"-0:a:{audioIndex}");
                         }
                     }
+                    // 「単一区間で保持するデータ」で外れているものは、全体コピーでも除く。
+                    if (!IsKeepDataChecked("subtitle"))
+                    {
+                        args.AddRange(new[] { "-map", "-0:s" });
+                        // 添付ファイルは字幕と一緒に除く。ただしサムネイル (カバー画像) を保持する場合は残す。
+                        var keepCover = IsKeepDataChecked("thumbnail")
+                            && GetAttachmentStreams().Exists(s => s.Tag("filename").StartsWith("cover.", StringComparison.OrdinalIgnoreCase));
+                        if (!keepCover) args.AddRange(new[] { "-map", "-0:t" });
+                    }
+                    if (!IsKeepDataChecked("thumbnail"))
+                    {
+                        foreach (var pic in GetAttachedPicStreams())
+                        {
+                            args.Add("-map");
+                            args.Add($"-0:{pic.Index}");
+                        }
+                    }
+                    if (!IsKeepDataChecked("databroadcast") && Path.GetExtension(output).ToLowerInvariant() is (".ts" or ".m2ts"))
+                    {
+                        foreach (var stream in _probe!.Streams)
+                        {
+                            if (string.Equals(stream.CodecTag, "0x000d", StringComparison.OrdinalIgnoreCase))
+                            {
+                                args.Add("-map");
+                                args.Add($"-0:{stream.Index}");
+                            }
+                        }
+                    }
                     args.AddRange(new[] { "-c", "copy" });
                     description = rotationIndex == 0 && !audioChanged
                         ? "動画全体をそのままコピー（全ストリームコピー）"
@@ -1381,7 +1625,7 @@ internal sealed partial class MainForm
                 }
             }
 
-            args.AddRange(new[] { "-map_metadata", GetMapMetadataValue(), "-map_chapters", speedChanged ? "-1" : "0" });
+            args.AddRange(new[] { "-map_metadata", GetMapMetadataValue(), "-map_chapters", speedChanged || !IsKeepDataChecked("chapter") ? "-1" : "0" });
             if (ext is ".mp4" or ".mov" or ".m4v") args.AddRange(new[] { "-movflags", "+faststart" });
             args.Add(output);
             args = AddRotationInputArgument(args, videoReencoded);
@@ -1407,7 +1651,7 @@ internal sealed partial class MainForm
                 ExpectedDurationMs = editedDurationMs,
                 VerificationKind = videoReencoded ? "non-cut-reencoded-output" : "non-cut-streamcopy-output",
                 SourceDurationMs = _durationMs,
-                ProgramInfoSourcePath = videoReencoded && !speedChanged
+                ProgramInfoSourcePath = videoReencoded && !speedChanged && IsKeepDataChecked("programinfo")
                     && string.Equals(Path.GetExtension(output), ".ts", StringComparison.OrdinalIgnoreCase)
                     && IsTsSourceContainer()
                     ? _inputPath
@@ -2137,7 +2381,7 @@ internal sealed partial class MainForm
         return result;
     }
 
-    private (List<string> Arguments, string BsfFilter, long VideoStartMs, long VideoLengthMs, long ContentStartMs) NewLosslessCutArguments(
+    private (List<string> Arguments, string BsfFilter, long VideoStartMs, long VideoLengthMs, long ContentStartMs, List<(string Path, string Content)> TempFiles) NewLosslessCutArguments(
         long startMs, long endMs, IReadOnlyList<ProbeStream> audios, string output, double speed = 1.0)
     {
         // 1 区間を trim ビットストリームフィルターで無劣化 (ストリームコピー) 抽出する。
@@ -2151,6 +2395,35 @@ internal sealed partial class MainForm
         // 映像は主映像 (最初の映像ストリーム) だけを出力する (ワンセグなどの副映像は含めない)。
         if (_videoStreams.Count > 0) { args.Add("-map"); args.Add($"0:{_videoStreams[0].Index}"); }
         foreach (var audio in audios) { args.Add("-map"); args.Add($"0:{audio.Index}"); }
+        // 保持するデータ (速度変更時は除く): サムネイル・字幕・添付ファイルも一緒に切り出す。
+        var tempFiles = new List<(string Path, string Content)>();
+        var keptPics = new List<ProbeStream>();
+        var subtitleBsfArgs = new List<string>();
+        if (!speedChanged)
+        {
+            if (IsKeepDataChecked("thumbnail")) keptPics = GetAttachedPicStreams();
+            foreach (var pic in keptPics) { args.Add("-map"); args.Add($"0:{pic.Index}"); }
+            if (IsKeepDataChecked("subtitle"))
+            {
+                var subtitles = GetSubtitleStreams();
+                var outIndex = 0;
+                for (var k = 0; k < subtitles.Count; k++)
+                {
+                    var bsf = BuildSubtitleTrimBsf(subtitles[k], startMs, endMs, rebaseToZero: false);
+                    if (bsf == null) continue;
+                    args.Add("-map");
+                    args.Add($"0:s:{k}");
+                    subtitleBsfArgs.Add($"-bsf:s:{outIndex}");
+                    subtitleBsfArgs.Add(bsf);
+                    outIndex++;
+                }
+            }
+            if ((IsKeepDataChecked("subtitle") || IsKeepDataChecked("thumbnail")) && ext == ".mkv" && GetAttachmentStreams().Count > 0)
+            {
+                args.Add("-map");
+                args.Add("0:t");
+            }
+        }
         args.AddRange(new[] { "-c", "copy" });
         string bsfFilter;
         var audioBsfFilter = "";
@@ -2215,9 +2488,17 @@ internal sealed partial class MainForm
             var audioLengthText = audioLengthMs.ToString(CultureInfo.InvariantCulture);
             audioBsfFilter = $"trim=start={audioStartText}:start_type=msec_pt:start_rel=1:end={audioLengthText}:end_type=dur_t_msec:trim_packets=1";
         }
-        args.AddRange(new[] { "-bsf:v", bsfFilter });
+        // サムネイルを映像ストリームとして一緒に持つ場合は、trim を主映像だけに効かせる。
+        args.AddRange(new[] { keptPics.Count > 0 ? "-bsf:v:0" : "-bsf:v", bsfFilter });
         if (audios.Count > 0) args.AddRange(new[] { "-bsf:a", audioBsfFilter });
-        args.AddRange(new[] { "-map_metadata", GetMapMetadataValue(), "-map_chapters", "-1" });
+        if (subtitleBsfArgs.Count > 0) args.AddRange(subtitleBsfArgs);
+        // 無劣化経路の出力の時刻軸は、MP4 系ではカット位置が、それ以外では出力の先頭になる
+        // フレーム (キーフレーム) の位置が起点になる。チャプターはその軸へ合わせて直す。
+        var chaptersBaseMs = ext is ".mp4" or ".mov" or ".m4v" ? startMs : videoStartMs;
+        var chaptersIndex = !speedChanged && IsKeepDataChecked("chapter")
+            ? AddSegmentChaptersInput(args, startMs, endMs, chaptersBaseMs, tempFiles)
+            : -1;
+        args.AddRange(new[] { "-map_metadata", GetMapMetadataValue(), "-map_chapters", chaptersIndex >= 0 ? chaptersIndex.ToString(CultureInfo.InvariantCulture) : "-1" });
         if (ext is ".mp4" or ".mov" or ".m4v")
         {
             // MP4 系で -avoid_negative_ts / -start_at_zero を使うと、DTS が 0 になるよう全体が
@@ -2251,7 +2532,7 @@ internal sealed partial class MainForm
         }
         args.Add(output);
         args = AddRotationInputArgument(args, false);
-        return (args, bsfFilter, videoStartMs, videoLengthMs, contentStartMs);
+        return (args, bsfFilter, videoStartMs, videoLengthMs, contentStartMs, tempFiles);
     }
 
     /// <summary>
@@ -2273,7 +2554,7 @@ internal sealed partial class MainForm
         return extendedMs > endMs ? extendedMs : endMs;
     }
 
-    private (List<string> Arguments, string FilterComplex) NewReencodedClippedSegmentArguments(
+    private (List<string> Arguments, string FilterComplex, List<(string Path, string Content)> TempFiles) NewReencodedClippedSegmentArguments(
         long startMs, long endMs, Segment segment, int[] audioRelativeIndices, string output, double speed = 1.0)
     {
         // 1 区間の映像を (必要なら crop して) 再エンコードし、選択音声も atrim / asetpts を通して再エンコードする。
@@ -2306,11 +2587,16 @@ internal sealed partial class MainForm
         foreach (var audioRel in audioRelativeIndices) audioStreamsForEncoding.Add(_audioStreams[audioRel]);
         args.AddRange(GetVideoEncoderArgs());
         if (audioStreamsForEncoding.Count > 0) args.AddRange(GetAudioEncoderArgs(audioStreamsForEncoding));
-        args.AddRange(new[] { "-map_metadata", GetMapMetadataValue(), "-map_chapters", "-1" });
+        AddKeepDataToEncodeArgs(args, ext, startMs, endMs, wholeFile: false, speedChanged, firstVideoOutputOrdinal: 1);
+        var tempFiles = new List<(string Path, string Content)>();
+        var chaptersIndex = !speedChanged && IsKeepDataChecked("chapter")
+            ? AddSegmentChaptersInput(args, startMs, endMs, startMs, tempFiles)
+            : -1;
+        args.AddRange(new[] { "-map_metadata", GetMapMetadataValue(), "-map_chapters", chaptersIndex >= 0 ? chaptersIndex.ToString(CultureInfo.InvariantCulture) : "-1" });
         if (ext is ".mp4" or ".mov" or ".m4v") args.AddRange(new[] { "-movflags", "+faststart" });
         args.Add(output);
         args = AddRotationInputArgument(args, true);
-        return (args, filterComplex);
+        return (args, filterComplex, tempFiles);
     }
 
     // ------------------------------------------------------------------
@@ -2396,6 +2682,7 @@ internal sealed partial class MainForm
         WriteLog($"出力予定ファイル名: {output}");
 
         var args = new List<string> { "-hide_banner", "-nostdin", "-y", "-loglevel", "verbose", "-probesize", "100M", "-analyzeduration", "100M", "-i", _inputPath };
+        var stepTempFiles = new List<(string Path, string Content)>();
         var description = "";
         if (isLosslessPath)
         {
@@ -2406,6 +2693,7 @@ internal sealed partial class MainForm
             WriteLog($"単一区間: start={startMs} ms ({TimeText.FormatClockFromMs(startMs)}); end={endMs} ms ({TimeText.FormatClockFromMs(endMs)}); length={lengthMs} ms ({TimeText.FormatClockFromMs(lengthMs)})");
             var cut = NewLosslessCutArguments(startMs, endMs, selectedCutAudios, output, speedValue);
             args = cut.Arguments;
+            stepTempFiles = cut.TempFiles;
             description = "単一区間を trim BSF で無劣化抽出";
             WriteLog($"映像 BSF: {cut.BsfFilter}");
             if (selectedCutAudios.Count > 0) WriteLog($"音声 BSF: {cut.BsfFilter}");
@@ -2440,7 +2728,11 @@ internal sealed partial class MainForm
                 args.AddRange(new[] { "-c:a", "copy", "-bsf:a", audioBsfFilter });
                 WriteLog($"音声エンコーダー: stream copy / BSF: {audioBsfFilter}");
             }
-            args.AddRange(new[] { "-map_metadata", GetMapMetadataValue(), "-map_chapters", "-1", "-avoid_negative_ts", "make_zero" });
+            AddKeepDataToEncodeArgs(args, ext, startMs, endMs, wholeFile: false, speedChanged: false, firstVideoOutputOrdinal: 1);
+            var chaptersIndex = IsKeepDataChecked("chapter")
+                ? AddSegmentChaptersInput(args, startMs, endMs, startMs, stepTempFiles)
+                : -1;
+            args.AddRange(new[] { "-map_metadata", GetMapMetadataValue(), "-map_chapters", chaptersIndex >= 0 ? chaptersIndex.ToString(CultureInfo.InvariantCulture) : "-1", "-avoid_negative_ts", "make_zero" });
             if (ext is ".mp4" or ".mov" or ".m4v") args.AddRange(new[] { "-movflags", "+faststart" });
             args.Add(output);
             description = "単一区間の映像に crop フィルターを適用して再エンコードし、音声は無劣化コピー";
@@ -2572,13 +2864,14 @@ internal sealed partial class MainForm
             ExpectedDurationMs = editedDurationMs,
             VerificationKind = isLosslessPath ? "single-cut-output" : "reencoded-concat-output",
             SourceDurationMs = _durationMs,
-            ProgramInfoSourcePath = segmentCount == 1 && !speedChanged
+            ProgramInfoSourcePath = segmentCount == 1 && !speedChanged && IsKeepDataChecked("programinfo")
                 && string.Equals(Path.GetExtension(output), ".ts", StringComparison.OrdinalIgnoreCase)
                 && IsTsSourceContainer()
                 ? _inputPath
                 : "",
             ProgramInfoStartMs = segments[0].StartMs,
             ProgramInfoEndMs = segments[0].EndMs,
+            TempFileContents = stepTempFiles,
         };
         return step;
     }
@@ -2745,16 +3038,20 @@ internal sealed partial class MainForm
         // 「エンコードして出力」では、1 区間は常にフィルター方式で再エンコードする。
         var segmentVideoReencoded = forceEncode || (speedChanged && selectedAudios.Count > 0);
         List<string> cutArguments;
+        var tempFiles = new List<(string Path, string Content)>();
         var losslessContentStartMs = startMs;
         var losslessVideoLengthMs = endMs - startMs;
         if (segmentVideoReencoded)
         {
-            cutArguments = NewReencodedClippedSegmentArguments(startMs, endMs, segment, selectedAudioRelativeIndices.ToArray(), outputPath, speedValue).Arguments;
+            var encoded = NewReencodedClippedSegmentArguments(startMs, endMs, segment, selectedAudioRelativeIndices.ToArray(), outputPath, speedValue);
+            cutArguments = encoded.Arguments;
+            tempFiles = encoded.TempFiles;
         }
         else
         {
             var cut = NewLosslessCutArguments(startMs, endMs, selectedAudios, outputPath, speedValue);
             cutArguments = cut.Arguments;
+            tempFiles = cut.TempFiles;
             losslessContentStartMs = cut.ContentStartMs;
             losslessVideoLengthMs = cut.VideoLengthMs;
         }
@@ -2779,7 +3076,7 @@ internal sealed partial class MainForm
                 : (long)Math.Round((endMs - startMs) / speedValue),
             VerificationKind = "single-cut-output",
             SourceDurationMs = _durationMs,
-            ProgramInfoSourcePath = !speedChanged
+            ProgramInfoSourcePath = !speedChanged && IsKeepDataChecked("programinfo")
                 && string.Equals(Path.GetExtension(outputPath), ".ts", StringComparison.OrdinalIgnoreCase)
                 && IsTsSourceContainer()
                 ? _inputPath
@@ -2788,6 +3085,7 @@ internal sealed partial class MainForm
             // 先頭フレームの位置 (映像の先頭パケット起点) を渡す。
             ProgramInfoStartMs = !segmentVideoReencoded && !speedChanged ? losslessContentStartMs : startMs,
             ProgramInfoEndMs = endMs,
+            TempFileContents = tempFiles,
         };
     }
 }

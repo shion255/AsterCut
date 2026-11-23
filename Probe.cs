@@ -29,6 +29,8 @@ internal sealed class ProbeStream
     public string RFrameRate { get; set; } = "";
     public int Channels { get; set; }
     public int AttachedPic { get; set; }
+    /// <summary>先頭パケットの表示時刻 (ファイル先頭を 0 とするアプリの時刻軸の ms)。字幕ストリームだけ調べる。分からなければ -1。</summary>
+    public long FirstPacketAppMs { get; set; } = -1;
     public string PixFmt { get; set; } = "";
     public string BitsPerRawSample { get; set; } = "";
     /// <summary>Display Matrix の回転 (反時計回りの度数文字列)。なければ空。</summary>
@@ -38,10 +40,19 @@ internal sealed class ProbeStream
     public string Tag(string name) => Tags.TryGetValue(name, out var value) ? value : "";
 }
 
+/// <summary>ffprobe の JSON 出力の 1 チャプター分。</summary>
+internal sealed class ProbeChapter
+{
+    public long StartMs { get; set; }
+    public long EndMs { get; set; }
+    public string Title { get; set; } = "";
+}
+
 /// <summary>ffprobe の JSON 出力全体。</summary>
 internal sealed class ProbeResult
 {
     public List<ProbeStream> Streams { get; } = new();
+    public List<ProbeChapter> Chapters { get; } = new();
     public string FormatName { get; set; } = "";
     public string FormatLongName { get; set; } = "";
     public string FormatDuration { get; set; } = "";
@@ -71,7 +82,7 @@ internal static class Probe
             "-probesize", "100M",
             "-analyzeduration", "100M",
             "-max_probe_packets", "500000",
-            "-show_streams", "-show_format", "-of", "json",
+            "-show_streams", "-show_format", "-show_chapters", "-of", "json",
             inputPath,
         })
         {
@@ -90,7 +101,65 @@ internal static class Probe
             var detail = string.IsNullOrWhiteSpace(diagnostics) ? "" : "\r\n" + diagnostics.Trim();
             throw new InvalidOperationException($"ffprobe が失敗しました (終了コード {process.ExitCode})。{detail}");
         }
-        return Parse(raw);
+        var result = Parse(raw);
+        // 字幕ストリームは、先頭パケットの位置がストリームの開始時刻として報告されないことがある
+        // (マクサによっては 0 になる) ため、パケットから直接調べる。trim の起点に使う。
+        var formatStartSec = ParseSeconds(result.FormatStartTime);
+        foreach (var stream in result.Streams)
+        {
+            if (stream.CodecType != "subtitle") continue;
+            stream.FirstPacketAppMs = await ProbeFirstPacketAppMsAsync(ffprobePath, inputPath, stream.Index, formatStartSec);
+        }
+        return result;
+    }
+
+    /// <summary>指定ストリームの先頭パケットの表示時刻 (アプリの時刻軸の ms)。調べられなければ -1。</summary>
+    private static async Task<long> ProbeFirstPacketAppMsAsync(string ffprobePath, string inputPath, int streamIndex, double formatStartSec)
+    {
+        try
+        {
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = ffprobePath,
+                WorkingDirectory = Path.GetDirectoryName(ffprobePath) ?? "",
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                StandardOutputEncoding = Encoding.UTF8,
+                StandardErrorEncoding = Encoding.UTF8,
+            };
+            foreach (var arg in new[]
+            {
+                "-v", "error",
+                "-select_streams", streamIndex.ToString(CultureInfo.InvariantCulture),
+                "-show_entries", "packet=pts_time",
+                "-of", "csv=p=0",
+                "-read_intervals", "%+#1",
+                inputPath,
+            })
+            {
+                startInfo.ArgumentList.Add(arg);
+            }
+            using var process = new Process { StartInfo = startInfo };
+            if (!process.Start()) return -1;
+            var stdoutTask = process.StandardOutput.ReadToEndAsync();
+            await process.WaitForExitAsync();
+            var raw = await stdoutTask;
+            if (process.ExitCode != 0) return -1;
+            foreach (var line in raw.Split('\n'))
+            {
+                if (double.TryParse(line.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var ptsSec))
+                {
+                    return (long)Math.Round((ptsSec - formatStartSec) * 1000.0);
+                }
+            }
+            return -1;
+        }
+        catch
+        {
+            return -1;
+        }
     }
 
     private static ProbeResult Parse(string json)
@@ -149,6 +218,24 @@ internal static class Probe
                 }
                 ReadTags(element, stream.Tags);
                 result.Streams.Add(stream);
+            }
+        }
+        if (root.TryGetProperty("chapters", out var chapters) && chapters.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var element in chapters.EnumerateArray())
+            {
+                // チャプターの時刻は、アプリの時刻軸 (ファイル先頭を 0 とする軸) へそろえる。
+                var formatStartSec = ParseSeconds(result.FormatStartTime);
+                var chapter = new ProbeChapter
+                {
+                    StartMs = (long)Math.Round((ParseSeconds(GetText(element, "start_time")) - formatStartSec) * 1000.0),
+                    EndMs = (long)Math.Round((ParseSeconds(GetText(element, "end_time")) - formatStartSec) * 1000.0),
+                };
+                if (element.TryGetProperty("tags", out var tags) && tags.ValueKind == JsonValueKind.Object)
+                {
+                    chapter.Title = GetText(tags, "title");
+                }
+                result.Chapters.Add(chapter);
             }
         }
         return result;
