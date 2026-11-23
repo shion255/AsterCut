@@ -524,11 +524,11 @@ internal sealed partial class MainForm
 
     private static string GetEditProjectDefaultFileName(string inputPath, DateTime now)
     {
-        // プロジェクトファイルの初期ファイル名: 入力ファイル名 (拡張子なし) _(保存時刻).acproj
+        // プロジェクトファイルの初期ファイル名: 入力ファイル名 (拡張子なし) _保存時刻.acproj
         var baseName = Path.GetFileNameWithoutExtension(inputPath);
         if (string.IsNullOrWhiteSpace(baseName)) baseName = "project";
         var stamp = now.ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture);
-        return $"{baseName}_({stamp}).acproj";
+        return $"{baseName}_{stamp}.acproj";
     }
 
     private void SaveEditProject()
