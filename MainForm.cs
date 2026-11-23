@@ -174,6 +174,14 @@ internal sealed partial class MainForm : Form
         Icon = AppIcon.Value;
         _settings = AppSettings.Load();
 
+        // オプションが有効なときは、起動時に、存在しないファイルの項目を入力履歴から取り除く。
+        if (_settings.DeleteInvalidHistoryOnStartup)
+        {
+            var removed = _settings.InputHistory.RemoveAll(p => !File.Exists(p));
+            removed += _settings.ChapterInputHistory.RemoveAll(p => !File.Exists(p));
+            if (removed > 0) _settings.Save();
+        }
+
         // フォント基準の自動拡大を止める。ピクセル単位の配置を保つためで、
         // これをしないと右端に固定したコントロール (参照・読み込みボタン、状態表示、
         // キャンセルボタン) が画面の外へずれて切れてしまう。
