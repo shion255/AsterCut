@@ -96,11 +96,11 @@ internal sealed partial class MainForm
         chapterStartLabel.Width = chapterStartLabel.PreferredWidth;
         _chapterTab.Controls.Add(chapterStartLabel);
         var chapterStartBoxX = 520 + chapterStartLabel.PreferredWidth + 1;
-        _chapterStartBox = Theme.MakeTextBox(chapterStartBoxX, 57, 145);
+        _chapterStartBox = Theme.MakeTextBox(chapterStartBoxX, 57, 125);
         _chapterStartBox.Text = "00:00:00.000";
         _chapterStartBox.HandleCreated += (_, _) => ApplyTextBoxMarginsOnce(_chapterStartBox, 2, 0);
         _chapterTab.Controls.Add(_chapterStartBox);
-        var setCurrentStartButton = Theme.MakeButton("現在位置を開始に設定", chapterStartBoxX + 155, 56, 170, 30);
+        var setCurrentStartButton = Theme.MakeButton("現在位置を開始に設定", chapterStartBoxX + 135, 56, 170, 30);
         setCurrentStartButton.Click += (_, _) =>
         {
             if (_previewReady)
