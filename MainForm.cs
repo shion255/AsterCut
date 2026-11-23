@@ -619,7 +619,8 @@ internal sealed partial class MainForm : Form
         _previewCenteredRows.Add(new Control[] { _previewPositionLabel });
         var speedTabToolTip = new ToolTip { AutoPopDelay = 30000, InitialDelay = 300 };
         var speedHintText = string.Join(Environment.NewLine,
-            "再生速度を設定します。マウスホイールと ↑ / ↓ キーで 0.05 ずつ増減でき、直接入力もできます (0.05 ～ 100.00)。",
+            "再生速度を設定します。",
+            "マウスホイールと ↑ / ↓ キーで 0.05 ずつ増減でき、直接入力もできます (0.05 ～ 100.00)。",
             "保持する音声がある速度変更は再エンコードします。",
             "音声なしは（1 区間・クリッピングなしの場合）ストリームコピー方式です。",
             "保持する音声は「ソース」タブで選択します。");
@@ -634,7 +635,8 @@ internal sealed partial class MainForm : Form
             "再生時の向きだけを変えます。",
             "回転のために映像・音声を再エンコードすることはありません。",
             "回転メタデータ（表示マトリクス）だけを書き換えます（FFmpeg 6.0 以降）。",
-            "入力に回転情報がある場合は加算します。ファイル名に「_rot90cw / _rot180 / _rot90ccw」を付けます。",
+            "入力に回転情報がある場合は加算します。",
+            "ファイル名に「_rot90cw / _rot180 / _rot90ccw」を付けます。",
             "プレーヤーによっては回転メタデータが無視されることがあります。",
             "「(プレビュー)」をクリックすると、回転後の向きをポップアップで確認できます（表示のみ）。");
         speedTabToolTip.SetToolTip(_rotationCombo, rotationHintText);
