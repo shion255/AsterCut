@@ -1390,9 +1390,11 @@ internal sealed partial class MainForm
     {
         var direction = e.KeyCode switch
         {
-            // 上下キーは左右とは逆向き (↑ で戻り、↓ で進む)。
-            Keys.Right or Keys.Down => 1,
-            Keys.Left or Keys.Up => -1,
+            // 上下キーは左右とは逆向き (↑ で戻り、↓ で進む)。上下は 5 フレーム、左右は 1 フレーム。
+            Keys.Right => 1,
+            Keys.Down => 5,
+            Keys.Left => -1,
+            Keys.Up => -5,
             _ => 0,
         };
         if (direction == 0) return;
