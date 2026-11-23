@@ -271,6 +271,7 @@ internal sealed partial class MainForm
         _addProfileButton.Click += (_, _) => AddNewProfile();
         _saveProfileButton.Click += (_, _) => SaveCurrentProfile();
         _deleteProfileButton.Click += (_, _) => DeleteCurrentProfile();
+        InitializeProfileRenameMenu();
         _videoFormatCombo.SelectedIndexChanged += (_, _) => OnVideoFormatChanged();
         _audioFormatCombo.SelectedIndexChanged += (_, _) => OnAudioFormatChanged();
         _containerCombo.SelectedIndexChanged += (_, _) => OnContainerChanged();

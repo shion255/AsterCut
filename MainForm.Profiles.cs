@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Globalization;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Linq;
 using System.Text;
 using System.Text.Encodings.Web;
@@ -272,6 +273,212 @@ internal sealed partial class MainForm
             ApplySelectedProfile();
             WriteLog($"プロファイルを削除しました: {name}");
             SetStatus($"プロファイル「{name}」を削除しました");
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(ex.Message, AppTitle, MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // プロファイルの名前変更 (コンボボックスの右クリックメニュー)
+    // ------------------------------------------------------------------
+
+    private ContextMenuStrip? _profileRenameMenu;
+    private string? _profileRenameTarget;
+    private bool _profileRenameMenuFromList;
+    private IntPtr _profileComboListHandle;
+    private bool _profileListFilterRegistered;
+    private System.Windows.Forms.Timer? _profileMenuTimer;
+
+    [DllImport("user32.dll")]
+    private static extern bool GetComboBoxInfo(IntPtr hwndCombo, ref ComboBoxInfo info);
+
+    [DllImport("user32.dll", EntryPoint = "SendMessageW")]
+    private static extern IntPtr SendMessageProfileList(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("user32.dll")]
+    private static extern bool GetWindowRect(IntPtr hWnd, out NativeRect rect);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativeRect
+    {
+        public int Left;
+        public int Top;
+        public int Right;
+        public int Bottom;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct ComboBoxInfo
+    {
+        public int cbSize;
+        public Rectangle rcItem;
+        public Rectangle rcButton;
+        public int stateButton;
+        public IntPtr hwndCombo;
+        public IntPtr hwndEdit;
+        public IntPtr hwndList;
+    }
+
+    private sealed class ProfileListFilter : IMessageFilter
+    {
+        private const int WmRButtonDown = 0x0204;
+        private readonly MainForm _form;
+
+        public ProfileListFilter(MainForm form) => _form = form;
+
+        public bool PreFilterMessage(ref Message m)
+        {
+            if (m.Msg != WmRButtonDown || _form.IsDisposed) return false;
+            return _form.TryProfileListRightClick(m.HWnd);
+        }
+    }
+
+    private void InitializeProfileRenameMenu()
+    {
+        if (_profileCombo == null) return;
+        var menu = new ContextMenuStrip { Renderer = new ToolStripProfessionalRenderer(new AsterCutMenuColorTable()) };
+        var item = new ToolStripMenuItem("名前を変更") { ForeColor = Theme.MenuFore };
+        item.Click += (_, _) => RenameProfile(_profileRenameTarget);
+        menu.Items.Add(item);
+        menu.Opening += (_, e) =>
+        {
+            if (_profileRenameMenuFromList)
+            {
+                _profileRenameMenuFromList = false;
+            }
+            else
+            {
+                _profileRenameTarget = _profileCombo.SelectedItem?.ToString();
+            }
+            if (string.IsNullOrEmpty(_profileRenameTarget)) e.Cancel = true;
+        };
+        _profileRenameMenu = menu;
+        _profileCombo.ContextMenuStrip = menu;
+        _profileCombo.DropDown += (_, _) => CaptureProfileComboListHandle();
+        _profileCombo.DropDownClosed += (_, _) => _profileComboListHandle = IntPtr.Zero;
+        if (!_profileListFilterRegistered)
+        {
+            Application.AddMessageFilter(new ProfileListFilter(this));
+            _profileListFilterRegistered = true;
+        }
+    }
+
+    private void CaptureProfileComboListHandle()
+    {
+        _profileComboListHandle = IntPtr.Zero;
+        if (_profileCombo == null || !_profileCombo.IsHandleCreated) return;
+        var info = new ComboBoxInfo { cbSize = Marshal.SizeOf<ComboBoxInfo>() };
+        if (GetComboBoxInfo(_profileCombo.Handle, ref info)) _profileComboListHandle = info.hwndList;
+    }
+
+    /// <summary>ドロップダウン一覧への右クリックなら、その項目を対象にメニューを開く。</summary>
+    private bool TryProfileListRightClick(IntPtr hWnd)
+    {
+        if (_profileCombo == null || _profileRenameMenu == null) return false;
+        if (_profileComboListHandle == IntPtr.Zero || hWnd != _profileComboListHandle) return false;
+        // LB_ITEMFROMPOINT には一覧のクライアント座標が要るため、一覧の画面上の位置から割り出す。
+        if (!GetWindowRect(hWnd, out var listRect)) return false;
+        var clientX = Cursor.Position.X - listRect.Left;
+        var clientY = Cursor.Position.Y - listRect.Top;
+        var pointParam = (IntPtr)((clientY << 16) | (clientX & 0xFFFF));
+        const uint LbItemFromPoint = 0x01A9;
+        var result = SendMessageProfileList(hWnd, LbItemFromPoint, IntPtr.Zero, pointParam).ToInt32();
+        var index = result & 0xFFFF;
+        var outside = (result >> 16) != 0;
+        if (outside || index >= _profileCombo.Items.Count) return false;
+        _profileRenameTarget = _profileCombo.Items[index]?.ToString();
+        if (string.IsNullOrEmpty(_profileRenameTarget)) return false;
+        _profileRenameMenuFromList = true;
+        var menu = _profileRenameMenu;
+        var showPoint = Cursor.Position;
+        // 一覧は開いたままにしてメニューだけを重ねる (一覧を先に閉じると環境によっては不安定になるため)。
+        // 一覧は、メニューの項目が選ばれたときに RenameProfile の先頭で閉じる。
+        // メニューの表示は、一覧へのマウスメッセージの処理が終わってからタイマーで出す。
+        _profileMenuTimer?.Stop();
+        _profileMenuTimer?.Dispose();
+        var timer = new System.Windows.Forms.Timer { Interval = 50 };
+        _profileMenuTimer = timer;
+        timer.Tick += (_, _) =>
+        {
+            timer.Stop();
+            if (ReferenceEquals(_profileMenuTimer, timer)) _profileMenuTimer = null;
+            timer.Dispose();
+            menu.Show(showPoint);
+        };
+        timer.Start();
+        return true;
+    }
+
+    private void RenameProfile(string? targetName)
+    {
+        if (_profileCombo is { DroppedDown: true }) _profileCombo.DroppedDown = false;
+        var name = targetName;
+        if (string.IsNullOrEmpty(name)) return;
+        if (name is "保存用" or "投稿用")
+        {
+            MessageBox.Show("組み込みのプロファイルは名前を変更できません。", AppTitle, MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        using var dialog = new Form
+        {
+            Icon = AppIcon.Value,
+            Text = "プロファイルの名前を変更",
+            StartPosition = FormStartPosition.CenterParent,
+            ClientSize = new Size(420, 100),
+            FormBorderStyle = FormBorderStyle.FixedDialog,
+            MaximizeBox = false,
+            MinimizeBox = false,
+            ShowInTaskbar = false,
+            BackColor = Theme.PageBack,
+            ForeColor = Theme.MenuFore,
+            Font = Font,
+            AutoScaleMode = AutoScaleMode.None,
+        };
+        Theme.ApplyDarkTitleBar(dialog);
+
+        dialog.Controls.Add(Theme.MakeLabel("新しい名前", 16, 12, 388, 24));
+        var nameBox = Theme.MakeTextBox(16, 42, 220, 28);
+        nameBox.Text = name;
+        nameBox.SelectAll();
+        dialog.Controls.Add(nameBox);
+
+        string? newName = null;
+        var renameButton = Theme.MakeButton("変更", 244, 41, 76, 30);
+        renameButton.Click += (_, _) =>
+        {
+            var candidate = nameBox.Text.Trim();
+            if (candidate.Length == 0
+                || candidate.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0
+                || (candidate != name && File.Exists(GetProfileFilePath(candidate))))
+            {
+                MessageBox.Show("その名前は使えません。空の名前、ファイル名に使えない文字、同名のプロファイルは指定できません。", AppTitle, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                nameBox.SelectAll();
+                nameBox.Focus();
+                return;
+            }
+            newName = candidate;
+            dialog.DialogResult = DialogResult.OK;
+        };
+        dialog.Controls.Add(renameButton);
+        var cancelButton = Theme.MakeButton("キャンセル", 328, 41, 96, 30);
+        cancelButton.Click += (_, _) => dialog.DialogResult = DialogResult.Cancel;
+        dialog.Controls.Add(cancelButton);
+        dialog.AcceptButton = renameButton;
+        dialog.CancelButton = cancelButton;
+        dialog.Shown += (_, _) => nameBox.Focus();
+
+        if (dialog.ShowDialog(this) != DialogResult.OK || newName == null || newName == name) return;
+        try
+        {
+            File.Move(GetProfileFilePath(name), GetProfileFilePath(newName));
+            var wasSelected = _profileCombo?.SelectedItem?.ToString() == name;
+            RefreshProfileCombo(wasSelected ? newName : _profileCombo?.SelectedItem?.ToString());
+            if (wasSelected) ApplySelectedProfile();
+            WriteLog($"プロファイルの名前を変更しました: {name} → {newName}");
+            SetStatus($"プロファイルの名前を「{newName}」に変更しました");
         }
         catch (Exception ex)
         {
