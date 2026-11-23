@@ -560,6 +560,8 @@ internal sealed partial class MainForm : Form
         var speedLabel = Theme.MakeLabel("変更後の速度:", 14, 468, 110, 24);
         _cutTab.Controls.Add(speedLabel);
         _speedBox = Theme.MakeTextBox(128, 466, 66, 28);
+        // 数字と小数点だけの入力欄のため IME は無効にする (全角の数字は数値として読み取れないため)。
+        _speedBox.ImeMode = ImeMode.Disable;
         _speedBox.Text = "1.00";
         _speedBox.HandleCreated += (_, _) => ApplyTextBoxMarginsOnce(_speedBox, 2, 0);
         _speedBox.MouseWheel += (_, e) => SpeedBoxMouseWheel(e);

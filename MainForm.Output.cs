@@ -163,6 +163,7 @@ internal sealed partial class MainForm
         var crfLabel = Theme.MakeLabel("画質 (crf):", 274, 56, 82, 28);
         _encodeSettingsGroup.Controls.Add(crfLabel);
         _videoCrfBox = Theme.MakeTextBox(357, 56, 70, 28);
+        _videoCrfBox.ImeMode = ImeMode.Disable;
         _videoCrfBox.Text = "23.0";
         _videoCrfBox.TextAlign = HorizontalAlignment.Center;
         _videoCrfBox.MouseWheel += (_, e) => CrfBoxMouseWheel(e);
