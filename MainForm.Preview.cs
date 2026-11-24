@@ -733,6 +733,50 @@ internal sealed partial class MainForm
     }
 
     /// <summary>
+    /// 「キーフレームを表示する」設定とフレーム表のキーフレームを、シークバーの縦線表示へ反映する。
+    /// </summary>
+    // キーフレーム表示が有効なとき、位置表示の左に直前のキーフレーム、右に直後のキーフレームのフレーム番号を表示する。
+    // 現在のフレーム自体がキーフレームのときは、それを直前として表示する。前 (または後) にキーフレームが無いときは、その側は空にする。
+    private void UpdateKeyframeFlankLabels(long positionMs)
+    {
+        if (_prevKeyframeLabel == null || _nextKeyframeLabel == null) return;
+        var prevText = "";
+        var nextText = "";
+        if (_settings.ShowKeyframesOnSeekBar && _frameTimesUs is { Length: > 0 } && _frameKeyTimesUs is { Length: > 0 })
+        {
+            var currentIndex = FindFrameIndexAtOrBefore(positionMs * 1000L + 999L);
+            // 先頭フレームより手前の位置は、位置表示と同じくフレーム 0 として扱う (途中の GOP から始まる素材用)。
+            if (currentIndex < 0) currentIndex = 0;
+            if (currentIndex >= 0)
+            {
+                var currentTimeUs = _frameTimesUs[currentIndex];
+                // 直前は、現在のフレームの開始時刻以下の最後のキーフレーム。
+                var lo = 0;
+                var hi = _frameKeyTimesUs.Length - 1;
+                var prevKey = -1;
+                while (lo <= hi)
+                {
+                    var mid = lo + (hi - lo) / 2;
+                    if (_frameKeyTimesUs[mid] <= currentTimeUs) { prevKey = mid; lo = mid + 1; }
+                    else hi = mid - 1;
+                }
+                if (prevKey >= 0)
+                {
+                    var prevIndex = FindFrameIndexAtOrBefore(_frameKeyTimesUs[prevKey]);
+                    if (prevIndex >= 0) prevText = $"◀ {prevIndex}f";
+                }
+                if (prevKey + 1 < _frameKeyTimesUs.Length)
+                {
+                    var nextIndex = FindFrameIndexAtOrBefore(_frameKeyTimesUs[prevKey + 1]);
+                    if (nextIndex >= 0) nextText = $"{nextIndex}f ▶";
+                }
+            }
+        }
+        if (_prevKeyframeLabel.Text != prevText) _prevKeyframeLabel.Text = prevText;
+        if (_nextKeyframeLabel.Text != nextText) _nextKeyframeLabel.Text = nextText;
+    }
+
+    /// <summary>
     /// 入力履歴の新しい方から順に、最初に存在したファイルを読み込んで再生する。
     /// 動画を入力していない状態で再生が押されたときに使う。
     /// </summary>
@@ -1245,6 +1289,7 @@ internal sealed partial class MainForm
         _previewPositionLabel.Text = labelText;
         if (_popupPositionLabel != null) _popupPositionLabel.Text = labelText;
         if (_clipPositionLabel != null) _clipPositionLabel.Text = labelText;
+        UpdateKeyframeFlankLabels(targetMs);
     }
 
     private void SetPreviewPositionFromTrackBar(SeekTrackBar trackBar)
@@ -1551,6 +1596,7 @@ internal sealed partial class MainForm
                 if (_popupSeekTrackBar != null && _popupSeekTrackBar.Value != sliderValue) _popupSeekTrackBar.Value = sliderValue;
                 if (_clipSeekTrackBar != null && _clipSeekTrackBar.Value != sliderValue) _clipSeekTrackBar.Value = sliderValue;
             }
+            UpdateKeyframeFlankLabels(positionMs);
         }
         catch { /* ラベル更新の失敗は無視する */ }
     }

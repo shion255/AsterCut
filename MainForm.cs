@@ -52,6 +52,8 @@ internal sealed partial class MainForm : Form
     // 動画編集タブのプレビューまわり (本体は MainForm.Preview.cs)。
     private readonly Panel _mpvHostPanel;
     private readonly Label _previewPositionLabel;
+    private readonly Label _prevKeyframeLabel;
+    private readonly Label _nextKeyframeLabel;
     private readonly Button _previewToggleButton;
     private readonly SeekTrackBar _seekTrackBar;
     private readonly VolumeIconButton _volumeMuteButton;
@@ -522,9 +524,17 @@ internal sealed partial class MainForm : Form
         };
         _mpvHostPanel.Resize += (_, _) => FitMpvWindow();
         _cutTab.Controls.Add(_mpvHostPanel);
-        _previewPositionLabel = Theme.MakeLabel("--:--:--.--- / --:--:--.---", 14, 299, 500, 24);
+        _prevKeyframeLabel = Theme.MakeLabel("", 14, 299, 72, 24);
+        _prevKeyframeLabel.TextAlign = ContentAlignment.MiddleRight;
+        _prevKeyframeLabel.ForeColor = Theme.MutedFore;
+        _cutTab.Controls.Add(_prevKeyframeLabel);
+        _previewPositionLabel = Theme.MakeLabel("--:--:--.--- / --:--:--.---", 90, 299, 348, 24);
         _previewPositionLabel.TextAlign = ContentAlignment.MiddleCenter;
         _cutTab.Controls.Add(_previewPositionLabel);
+        _nextKeyframeLabel = Theme.MakeLabel("", 442, 299, 72, 24);
+        _nextKeyframeLabel.TextAlign = ContentAlignment.MiddleLeft;
+        _nextKeyframeLabel.ForeColor = Theme.MutedFore;
+        _cutTab.Controls.Add(_nextKeyframeLabel);
         _previewToggleButton = Theme.MakeButton("再生", 14, 357, 82, 30);
         _previewToggleButton.Click += (_, _) => TogglePreviewPlayback();
         _cutTab.Controls.Add(_previewToggleButton);
@@ -674,7 +684,7 @@ internal sealed partial class MainForm : Form
         _speedBox.Location = new Point(speedLabel.Left + speedTextWidth + speedLabelGap, 432);
         // 再生時間は、プレビュー列の中央にそろえる
         // (実際の配置は UpdatePreviewColumnLayout が行う)。
-        _previewCenteredRows.Add(new Control[] { _previewPositionLabel });
+        _previewCenteredRows.Add(new Control[] { _prevKeyframeLabel, _previewPositionLabel, _nextKeyframeLabel });
         var speedTabToolTip = new ToolTip { AutoPopDelay = 30000, InitialDelay = 300 };
         var speedHintText = string.Join(Environment.NewLine,
             "再生速度を設定します。",
@@ -2278,6 +2288,7 @@ internal sealed partial class MainForm : Form
             StopFrameIndexBuild();
             _frameTimesUs = null;
             _frameKeyTimesUs = null;
+            UpdateKeyframeFlankLabels(_previewLogicalPositionMs);
             _inputPath = Path.GetFullPath(path);
             _inputPathBox.Text = _inputPath;
             _probe = null;
@@ -2751,6 +2762,7 @@ internal sealed partial class MainForm : Form
             }
             _frameTimesUs = table;
             _frameKeyTimesUs = FrameIndex.ParseKeyframeTimes(text, _frameBaseUs);
+            UpdateKeyframeFlankLabels(_previewLogicalPositionMs);
             UpdateSourceInfoPanel();
             _segmentList?.Invalidate();
             UpdateMpvTimelineOffset();

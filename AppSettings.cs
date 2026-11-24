@@ -26,6 +26,7 @@ internal sealed class AppSettings
     public bool SuppressOpusInMp4Warning { get; set; }
     public bool AutoCloseOutputLogPopup { get; set; }
     public bool DeleteInvalidHistoryOnStartup { get; set; }
+    public bool ShowKeyframesOnSeekBar { get; set; }
     public bool FixedOutputDirectoryEnabled { get; set; }
     public string FixedOutputDirectory { get; set; } = "";
     public string OutputProfileName { get; set; } = "";
@@ -168,6 +169,11 @@ internal sealed class AppSettings
                 (deleteInvalidHistory.ValueKind == JsonValueKind.True || deleteInvalidHistory.ValueKind == JsonValueKind.False))
             {
                 settings.DeleteInvalidHistoryOnStartup = deleteInvalidHistory.GetBoolean();
+            }
+            if (root.TryGetProperty("ShowKeyframesOnSeekBar", out var showKeyframes) &&
+                (showKeyframes.ValueKind == JsonValueKind.True || showKeyframes.ValueKind == JsonValueKind.False))
+            {
+                settings.ShowKeyframesOnSeekBar = showKeyframes.GetBoolean();
             }
             if (root.TryGetProperty("FixedOutputDirectoryEnabled", out var fixedOutputDir) &&
                 (fixedOutputDir.ValueKind == JsonValueKind.True || fixedOutputDir.ValueKind == JsonValueKind.False))
