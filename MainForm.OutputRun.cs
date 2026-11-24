@@ -880,27 +880,46 @@ internal sealed partial class MainForm
         _ => "yuv420p",
     };
 
+    /// <summary>TS 出力時の GOP (キーフレーム間隔) の上限をフレーム数で返す。TS には索引が無く、間隔が長いとシーク後に映像が出るまで時間がかかるため、約1秒に制限する。対象外の形式やフレームレート不明のときは制限しない。</summary>
+    private int GetTsGopLimitFrames(string ext)
+    {
+        var format = GetSelectedVideoFormat();
+        if (ext != ".ts" || (format != "AVC" && format != "HEVC") || _videoStreams.Count == 0) return 0;
+        var fps = Probe.ConvertFrameRateToDouble(_videoStreams[0].AvgFrameRate);
+        if (fps <= 0) fps = Probe.ConvertFrameRateToDouble(_videoStreams[0].RFrameRate);
+        return fps > 0 ? Math.Max(1, (int)Math.Round(fps)) : 0;
+    }
+
     /// <summary>再エンコード時の映像エンコーダー引数。フォーマットごとの固定設定 (プリセット) は従来の実装に合わせる (HEVC は preset medium、AV1 は SVT-AV1 preset 6)。</summary>
-    private List<string> GetVideoEncoderArgs()
+    private List<string> GetVideoEncoderArgs(string ext)
     {
         var crf = GetSelectedVideoCrf();
-        return GetSelectedVideoFormat() switch
+        var args = GetSelectedVideoFormat() switch
         {
             "AVC" => new List<string> { "-c:v", "libx264", "-preset", "medium", "-crf", crf, "-pix_fmt", GetVideoPixFmt() },
             "AV1" => new List<string> { "-c:v", "libsvtav1", "-preset", "6", "-crf", crf, "-pix_fmt", GetVideoPixFmt() },
             _ => new List<string> { "-c:v", "libx265", "-preset", "medium", "-crf", crf, "-pix_fmt", GetVideoPixFmt() },
         };
+        var gopLimit = GetTsGopLimitFrames(ext);
+        if (gopLimit > 0)
+        {
+            args.Add("-g");
+            args.Add(gopLimit.ToString(CultureInfo.InvariantCulture));
+        }
+        return args;
     }
 
-    private string GetVideoEncoderLogText()
+    private string GetVideoEncoderLogText(string ext)
     {
         var crf = GetSelectedVideoCrf();
-        return GetSelectedVideoFormat() switch
+        var text = GetSelectedVideoFormat() switch
         {
             "AVC" => $"AVC libx264 {GetSelectedBitDepth()}bit CRF {crf} / preset medium",
             "AV1" => $"AV1 SVT-AV1 {GetSelectedBitDepth()}bit CRF {crf} / preset 6",
             _ => $"HEVC libx265 {GetSelectedBitDepth()}bit CRF {crf} / preset medium",
         };
+        if (GetTsGopLimitFrames(ext) > 0) text += " / GOP 約1秒";
+        return text;
     }
 
     private static string FormatSpeedForFileName(double speed)
@@ -1554,8 +1573,8 @@ internal sealed partial class MainForm
                     }
                 }
 
-                args.AddRange(GetVideoEncoderArgs());
-                WriteLog($"映像エンコーダー: {GetVideoEncoderLogText()}");
+                args.AddRange(GetVideoEncoderArgs(ext));
+                WriteLog($"映像エンコーダー: {GetVideoEncoderLogText(ext)}");
                 args.AddRange(GetAudioEncoderArgs(selectedAudios));
                 AddKeepDataToEncodeArgs(args, ext, 0, _durationMs, wholeFile: true, speedChanged, _videoStreams.Count);
                 description = speedChanged
@@ -2610,7 +2629,7 @@ internal sealed partial class MainForm
         }
         var audioStreamsForEncoding = new List<ProbeStream>();
         foreach (var audioRel in audioRelativeIndices) audioStreamsForEncoding.Add(_audioStreams[audioRel]);
-        args.AddRange(GetVideoEncoderArgs());
+        args.AddRange(GetVideoEncoderArgs(ext));
         if (audioStreamsForEncoding.Count > 0) args.AddRange(GetAudioEncoderArgs(audioStreamsForEncoding));
         AddKeepDataToEncodeArgs(args, ext, startMs, endMs, wholeFile: false, speedChanged, firstVideoOutputOrdinal: 1);
         var tempFiles = new List<(string Path, string Content)>();
@@ -2747,7 +2766,7 @@ internal sealed partial class MainForm
                     throw new InvalidOperationException($"WebM 出力では音声を無劣化コピーできないコーデックが選択されています: {unsupportedNames}。Opus / Vorbis の音声を選択するか、別の出力形式を指定してください。");
                 }
             }
-            args.AddRange(GetVideoEncoderArgs());
+            args.AddRange(GetVideoEncoderArgs(ext));
             if (selectedAudioRelativeIndices.Count > 0)
             {
                 args.AddRange(new[] { "-c:a", "copy", "-bsf:a", audioBsfFilter });
@@ -2831,11 +2850,11 @@ internal sealed partial class MainForm
             }
             var audioStreamsForEncoding = new List<ProbeStream>();
             foreach (var audioRel in selectedAudioRelativeIndices) audioStreamsForEncoding.Add(_audioStreams[audioRel]);
-            args.AddRange(GetVideoEncoderArgs());
+            args.AddRange(GetVideoEncoderArgs(ext));
             if (audioStreamsForEncoding.Count > 0) args.AddRange(GetAudioEncoderArgs(audioStreamsForEncoding));
             WriteLog(audioStreamsForEncoding.Count > 0
-                ? $"エンコーダー: {GetVideoEncoderLogText()} / {GetAudioEncoderLogText()}"
-                : $"エンコーダー: {GetVideoEncoderLogText()}");
+                ? $"エンコーダー: {GetVideoEncoderLogText(ext)} / {GetAudioEncoderLogText()}"
+                : $"エンコーダー: {GetVideoEncoderLogText(ext)}");
             args.AddRange(new[] { "-map_metadata", GetMapMetadataValue(), "-map_chapters", "-1" });
             if (ext is ".mp4" or ".mov" or ".m4v") args.AddRange(new[] { "-movflags", "+faststart" });
             args.Add(output);
