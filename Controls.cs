@@ -83,9 +83,6 @@ internal sealed class ThemedCheckedListBox : CheckedListBox
 /// </summary>
 internal class VolumeValueLabel : Control
 {
-    private Font? _numberFont;
-    private Font? _percentFont;
-
     public VolumeValueLabel()
     {
         TabStop = false;
@@ -104,16 +101,6 @@ internal class VolumeValueLabel : Control
         }
     }
 
-    protected override void OnFontChanged(EventArgs e)
-    {
-        base.OnFontChanged(e);
-        _numberFont?.Dispose();
-        _percentFont?.Dispose();
-        _numberFont = new Font(Font.FontFamily, 12f);
-        _percentFont = new Font(Font.FontFamily, 8f);
-        Invalidate();
-    }
-
     private Color ResolveBackColor()
     {
         Control? c = Parent;
@@ -125,30 +112,91 @@ internal class VolumeValueLabel : Control
         return SystemColors.Control;
     }
 
+    // 数字と % は、テレビの表示のような 7セグメント風の字形で描く。
+    // 点灯していないセグメントも薄く描き、表示素子の質感を出す。
+    private static readonly bool[][] SegmentMap =
+    {
+        // a, b, c, d, e, f, g の順
+        new[] { true, true, true, true, true, true, false },     // 0
+        new[] { false, true, true, false, false, false, false }, // 1
+        new[] { true, true, false, true, true, false, true },    // 2
+        new[] { true, true, true, true, false, false, true },    // 3
+        new[] { false, true, true, false, false, true, true },   // 4
+        new[] { true, false, true, true, false, true, true },    // 5
+        new[] { true, false, true, true, true, true, true },     // 6
+        new[] { true, true, true, false, false, false, false },  // 7
+        new[] { true, true, true, true, true, true, true },      // 8
+        new[] { true, true, true, true, false, true, true },     // 9
+    };
+
     protected override void OnPaint(PaintEventArgs e)
     {
         var g = e.Graphics;
         g.Clear(ResolveBackColor());
-        if (_numberFont == null || _percentFont == null)
-        {
-            _numberFont = new Font(Font.FontFamily, 12f);
-            _percentFont = new Font(Font.FontFamily, 8f);
-        }
+        g.SmoothingMode = SmoothingMode.AntiAlias;
         var text = Text;
         var hasPercent = text.EndsWith("%");
         var number = hasPercent ? text[..^1] : text;
-        using var brush = new SolidBrush(Color.FromArgb(150, 128, 205));
-        const TextFormatFlags flags = TextFormatFlags.SingleLine | TextFormatFlags.NoPadding;
-        var numberSize = TextRenderer.MeasureText(g, number, _numberFont, ClientSize, flags);
-        var bottom = (ClientSize.Height + numberSize.Height) / 2;
-        TextRenderer.DrawText(g, number, _numberFont, new Rectangle(0, bottom - numberSize.Height, numberSize.Width, numberSize.Height), Color.FromArgb(150, 128, 205), flags);
+
+        var digitH = Math.Max(10f, ClientSize.Height - 6f);
+        var digitW = digitH * 0.56f;
+        var thickness = Math.Max(2f, digitH / 6f);
+        var pitch = digitW + thickness + 2f;
+        var bottom = (ClientSize.Height + digitH) / 2f;
+        var top = bottom - digitH;
+
+        var x = 0f;
+        foreach (var ch in number)
+        {
+            if (ch < '0' || ch > '9') continue;
+            DrawSegmentDigit(g, ch - '0', x, top, digitW, digitH, thickness);
+            x += pitch;
+        }
         if (hasPercent)
         {
-            var percentSize = TextRenderer.MeasureText(g, "%", _percentFont, ClientSize, flags);
-            // % は数字の下端より 1px 上に置く。描く範囲は右端まで広げ、字形が範囲で切れないようにする。
-            var percentX = numberSize.Width + 2;
-            TextRenderer.DrawText(g, "%", _percentFont, new Rectangle(percentX, bottom - percentSize.Height - 1, ClientSize.Width - percentX, percentSize.Height), Color.FromArgb(150, 128, 205), flags);
+            // % は数字より小さく、下端を数字の下端より少し上に置く。
+            var pctH = digitH * 0.78f;
+            DrawPercentSign(g, x + 1f, bottom - 1f - pctH, digitW * 1.05f, pctH, Math.Max(1.6f, thickness * 0.75f));
         }
+    }
+
+    private static void DrawSegmentDigit(Graphics g, int digit, float x, float top, float w, float h, float t)
+    {
+        var mid = top + h / 2f;
+        var right = x + w;
+        var bottomEdge = top + h;
+        // a, b, c, d, e, f, g の順の線分 (横線は両端を内側へ寄せ、丸い端同士が重なりすぎないようにする)。
+        var inset = t / 2f + 0.5f;
+        var segments = new (PointF From, PointF To)[]
+        {
+            (new PointF(x + inset, top), new PointF(right - inset, top)),            // a
+            (new PointF(right, top + inset), new PointF(right, mid - inset)),        // b
+            (new PointF(right, mid + inset), new PointF(right, bottomEdge - inset)), // c
+            (new PointF(x + inset, bottomEdge), new PointF(right - inset, bottomEdge)), // d
+            (new PointF(x, mid + inset), new PointF(x, bottomEdge - inset)),         // e
+            (new PointF(x, top + inset), new PointF(x, mid - inset)),                // f
+            (new PointF(x + inset, mid), new PointF(right - inset, mid)),            // g
+        };
+        using var ghostPen = new Pen(Color.FromArgb(62, 59, 74), t) { StartCap = LineCap.Round, EndCap = LineCap.Round };
+        using var litPen = new Pen(Color.FromArgb(150, 128, 205), t) { StartCap = LineCap.Round, EndCap = LineCap.Round };
+        for (var i = 0; i < segments.Length; i++)
+        {
+            g.DrawLine(ghostPen, segments[i].From, segments[i].To);
+        }
+        var lit = SegmentMap[digit];
+        for (var i = 0; i < segments.Length; i++)
+        {
+            if (lit[i]) g.DrawLine(litPen, segments[i].From, segments[i].To);
+        }
+    }
+
+    private static void DrawPercentSign(Graphics g, float x, float top, float w, float h, float t)
+    {
+        using var pen = new Pen(Color.FromArgb(150, 128, 205), t) { StartCap = LineCap.Round, EndCap = LineCap.Round };
+        g.DrawLine(pen, x + w - 1f, top + 1f, x + 1f, top + h - 1f);
+        var r = Math.Min(w, h) * 0.27f;
+        g.DrawEllipse(pen, x, top, r * 2f, r * 2f);
+        g.DrawEllipse(pen, x + w - r * 2f, top + h - r * 2f, r * 2f, r * 2f);
     }
 }
 
