@@ -856,7 +856,7 @@ internal sealed partial class MainForm
             var widthOffset = Width - page.ClientSize.Width;
             int ExtraWidthForFormWidth(int formWidth)
             {
-                var growth = Math.Max(0, formWidth - MinimumSize.Width);
+                var growth = Math.Max(0, formWidth - 1120);
                 var width = (int)Math.Floor(growth * 0.7);
                 width = Math.Max(width, formWidth - widthOffset - 520 - 10 - MaxSegmentGroupWidth);
                 return width;
@@ -865,14 +865,14 @@ internal sealed partial class MainForm
             // モニタの作業領域に対して中くらいのウィンドウサイズへそろえる。
             var targetFormW = (int)Math.Round(workingArea.Width * (to50 ? 0.50 : 0.70));
             var scale = Math.Min((508 + ExtraWidthForFormWidth(targetFormW)) / (double)videoW,
-                                 (282 + Math.Max(0, workingArea.Height - MinimumSize.Height)) / (double)videoH);
+                                 (282 + Math.Max(0, workingArea.Height - 900)) / (double)videoH);
             var targetPanelWi = (int)Math.Round(videoW * scale);
             var targetPanelHi = (int)Math.Round(videoH * scale);
             var extraW = targetPanelWi - 508;
-            var formW1 = MinimumSize.Width + (int)Math.Ceiling(extraW / 0.7);
+            var formW1 = 1120 + (int)Math.Ceiling(extraW / 0.7);
             var formW2 = widthOffset + 520 + 10 + MaxSegmentGroupWidth + extraW;
             newFormW = Math.Min(formW1, formW2);
-            newFormH = MinimumSize.Height + (targetPanelHi - 282);
+            newFormH = 900 + (targetPanelHi - 282);
         }
         catch
         {

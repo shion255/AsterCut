@@ -20,7 +20,7 @@ internal sealed class AppSettings
     public bool PreviewMuted { get; set; }
     public string MpvPath { get; set; } = "";
     public string PreviewBackend { get; set; } = "mpv";
-    public int WindowWidth { get; set; } = 1120;
+    public int WindowWidth { get; set; } = 1263;
     public int WindowHeight { get; set; } = 1000;
     public bool RememberWindowSize { get; set; } = true;
     public bool SuppressOpusInMp4Warning { get; set; }
@@ -139,11 +139,11 @@ internal sealed class AppSettings
 
             if (root.TryGetProperty("WindowWidth", out var width) && width.TryGetInt32(out var widthValue) && widthValue > 0)
             {
-                settings.WindowWidth = Math.Max(1120, widthValue);
+                settings.WindowWidth = Math.Max(1263, widthValue);
             }
             if (root.TryGetProperty("WindowHeight", out var height) && height.TryGetInt32(out var heightValue) && heightValue > 0)
             {
-                settings.WindowHeight = Math.Max(900, heightValue);
+                settings.WindowHeight = Math.Max(960, heightValue);
             }
             if (root.TryGetProperty("Volume", out var volume) && volume.TryGetInt32(out var volumeValue))
             {

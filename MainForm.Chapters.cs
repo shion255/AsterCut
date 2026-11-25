@@ -40,12 +40,12 @@ internal sealed partial class MainForm
     {
         // 入力チャプター (入力動画ボックスと同じ仕様: パスの表示、ドラッグ＆ドロップ、
         // 入力履歴、「参照...」「読み込み」)。今読み込まれているチャプターファイルのパスを表示する。
-        var chapterPathLabel = Theme.MakeLabel("入力チャプター:", 520, 16, 102);
+        var chapterPathLabel = Theme.MakeLabel("入力チャプター:", 539, 16, 102);
         chapterPathLabel.Font = Font;
         chapterPathLabel.Width = chapterPathLabel.PreferredWidth;
         _chapterTab.Controls.Add(chapterPathLabel);
-        var chapterPathBoxX = 520 + chapterPathLabel.PreferredWidth + 1;
-        _chapterPathBox = Theme.MakeTextBox(chapterPathBoxX, 15, 895 - chapterPathBoxX);
+        var chapterPathBoxX = 539 + chapterPathLabel.PreferredWidth + 1;
+        _chapterPathBox = Theme.MakeTextBox(chapterPathBoxX, 15, 914 - chapterPathBoxX);
         _chapterPathBox.AllowDrop = true;
         _chapterPathBox.DragEnter += ChapterFileDragEnter;
         _chapterPathBox.DragOver += ChapterFileDragOver;
@@ -62,7 +62,7 @@ internal sealed partial class MainForm
         _chapterPathBox.HandleCreated += (_, _) => ApplyTextBoxMarginsOnce(_chapterPathBox, 2, 26);
         ApplyTextBoxMarginsOnce(_chapterPathBox, 2, 26);
         _chapterTab.Controls.Add(_chapterPathBox);
-        _chapterHistoryButton = Theme.MakeButton("▼", 871, 16, 22, 24);
+        _chapterHistoryButton = Theme.MakeButton("▼", 890, 16, 22, 24);
         _chapterHistoryButton.FlatAppearance.BorderSize = 0;
         _chapterHistoryButton.FlatAppearance.MouseOverBackColor = Color.FromArgb(58, 54, 72);
         _chapterHistoryButton.FlatAppearance.MouseDownBackColor = Color.FromArgb(86, 74, 110);
@@ -84,18 +84,18 @@ internal sealed partial class MainForm
         };
         _chapterTab.Controls.Add(_chapterHistoryButton);
         _chapterHistoryButton.BringToFront();
-        var chapterBrowseButton = Theme.MakeButton("参照...", 901, 14, 78, 30);
+        var chapterBrowseButton = Theme.MakeButton("参照...", 920, 14, 78, 30);
         chapterBrowseButton.Click += (_, _) => BrowseChapterFile();
         _chapterTab.Controls.Add(chapterBrowseButton);
-        var chapterLoadButton = Theme.MakeButton("読み込み", 985, 14, 105, 30);
+        var chapterLoadButton = Theme.MakeButton("読み込み", 1004, 14, 105, 30);
         chapterLoadButton.Click += (_, _) => LoadChapterRequested();
         _chapterTab.Controls.Add(chapterLoadButton);
 
-        var chapterStartLabel = Theme.MakeLabel("開始:", 520, 58, 48);
+        var chapterStartLabel = Theme.MakeLabel("開始:", 525, 58, 48);
         chapterStartLabel.Font = Font;
         chapterStartLabel.Width = chapterStartLabel.PreferredWidth;
         _chapterTab.Controls.Add(chapterStartLabel);
-        var chapterStartBoxX = 520 + chapterStartLabel.PreferredWidth + 1;
+        var chapterStartBoxX = 525 + chapterStartLabel.PreferredWidth + 1;
         _chapterStartBox = Theme.MakeTextBox(chapterStartBoxX, 57, 125);
         _chapterStartBox.Text = "00:00:00.000";
         _chapterStartBox.HandleCreated += (_, _) => ApplyTextBoxMarginsOnce(_chapterStartBox, 2, 0);
@@ -115,10 +115,10 @@ internal sealed partial class MainForm
             }
         };
         _chapterTab.Controls.Add(setCurrentStartButton);
-        var addButton = Theme.MakeButton("チャプターを追加", 520, 100, 140, 32);
+        var addButton = Theme.MakeButton("チャプターを追加", chapterStartBoxX + 313, 56, 126, 32);
         addButton.Click += (_, _) => AddChapter();
         _chapterTab.Controls.Add(addButton);
-        var removeButton = Theme.MakeButton("選択を削除", 668, 100, 105, 32);
+        var removeButton = Theme.MakeButton("選択を削除", chapterStartBoxX + 447, 56, 105, 32);
         removeButton.Click += (_, _) =>
         {
             var idx = _chapterSelectedIndex;
@@ -172,7 +172,7 @@ internal sealed partial class MainForm
 
         _chapterGroup = new Panel
         {
-            Location = new Point(520, 145),
+            Location = new Point(520, 101),
             Size = new Size(510, 551),
             BorderStyle = BorderStyle.FixedSingle,
             BackColor = Theme.PageBack,

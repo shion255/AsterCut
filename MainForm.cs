@@ -195,10 +195,10 @@ internal sealed partial class MainForm : Form
         Font = new Font("Meiryo UI", 9f);
         BackColor = Theme.PageBack;
         ForeColor = Theme.LabelFore;
-        MinimumSize = new Size(1120, 900);
+        MinimumSize = new Size(1263, 960);
         Size = _settings.RememberWindowSize
             ? new Size(_settings.WindowWidth, _settings.WindowHeight)
-            : new Size(1120, 1000);
+            : new Size(1263, 1000);
         StartPosition = FormStartPosition.CenterScreen;
 
         // Dock するパネルは、子を入れる前に幅を明示する。幅が初期値 (200) のままだと、
@@ -714,11 +714,11 @@ internal sealed partial class MainForm : Form
         speedTabToolTip.SetToolTip(rotationLabel, rotationHintText);
 
         // 開始・終了と区間の操作ボタン。
-        var cutStartLabel = Theme.MakeLabel("開始:", 520, 16, 48, 24);
+        var cutStartLabel = Theme.MakeLabel("開始:", 582, 16, 48, 24);
         cutStartLabel.Font = Font;
         cutStartLabel.Width = cutStartLabel.PreferredWidth;
         _cutTab.Controls.Add(cutStartLabel);
-        var cutStartBoxX = 520 + cutStartLabel.PreferredWidth + 1;
+        var cutStartBoxX = 582 + cutStartLabel.PreferredWidth + 1;
         _cutStartBox = Theme.MakeTextBox(cutStartBoxX, 15, 125);
         _cutStartBox.Text = "00:00:00.000";
         _cutStartBox.HandleCreated += (_, _) => ApplyTextBoxMarginsOnce(_cutStartBox, 2, 0);
@@ -755,11 +755,11 @@ internal sealed partial class MainForm : Form
             catch { /* 時刻を解釈できない場合は何もしない */ }
         };
         _cutTab.Controls.Add(seekToStartButton);
-        var cutEndLabel = Theme.MakeLabel("終了:", 520, 56, 48, 24);
+        var cutEndLabel = Theme.MakeLabel("終了:", 582, 56, 48, 24);
         cutEndLabel.Font = Font;
         cutEndLabel.Width = cutEndLabel.PreferredWidth;
         _cutTab.Controls.Add(cutEndLabel);
-        var cutEndBoxX = 520 + cutEndLabel.PreferredWidth + 1;
+        var cutEndBoxX = 582 + cutEndLabel.PreferredWidth + 1;
         _cutEndBox = Theme.MakeTextBox(cutEndBoxX, 55, 125);
         _cutEndBox.Text = "00:00:00.000";
         _cutEndBox.HandleCreated += (_, _) => ApplyTextBoxMarginsOnce(_cutEndBox, 2, 0);
@@ -794,18 +794,18 @@ internal sealed partial class MainForm : Form
             catch { /* 時刻を解釈できない場合は何もしない */ }
         };
         _cutTab.Controls.Add(seekToEndButton);
-        var cutAddButton = Theme.MakeButton("区間を追加", 520, 98, 104, 32);
+        var cutAddButton = Theme.MakeButton("区間を追加", 540, 98, 104, 32);
         cutAddButton.Click += (_, _) => AddCutSegment();
         _cutTab.Controls.Add(cutAddButton);
-        var clipAddButton = Theme.MakeButton("クリッピングして追加", 630, 98, 140, 32);
+        var clipAddButton = Theme.MakeButton("クリッピングして追加", 650, 98, 140, 32);
         clipAddButton.Click += (_, _) => AddCutSegment(true);
         _cutTab.Controls.Add(clipAddButton);
-        _cutRemoveButton = Theme.MakeButton("選択を削除", 776, 98, 105, 32);
+        _cutRemoveButton = Theme.MakeButton("選択を削除", 796, 98, 105, 32);
         _cutRemoveButton.Click += (_, _) => RemoveSelectedSegment();
         _cutTab.Controls.Add(_cutRemoveButton);
         var cutUpButton = new ArrowButton
         {
-            Location = new Point(887, 98),
+            Location = new Point(907, 98),
             Size = new Size(42, 32),
             DirectionUp = true,
         };
@@ -813,13 +813,13 @@ internal sealed partial class MainForm : Form
         _cutTab.Controls.Add(cutUpButton);
         var cutDownButton = new ArrowButton
         {
-            Location = new Point(935, 98),
+            Location = new Point(955, 98),
             Size = new Size(42, 32),
             DirectionUp = false,
         };
         cutDownButton.Click += (_, _) => MoveCutSegment(1);
         _cutTab.Controls.Add(cutDownButton);
-        var cutSplitAllButton = Theme.MakeButton("全区間分割", 983, 98, 105, 32);
+        var cutSplitAllButton = Theme.MakeButton("全区間分割", 1003, 98, 105, 32);
         cutSplitAllButton.Click += (_, _) => SplitAllCutSegments();
         _cutTab.Controls.Add(cutSplitAllButton);
         var splitAllToolTip = new ToolTip();
@@ -1660,9 +1660,9 @@ internal sealed partial class MainForm : Form
         if (_chapterTab.ClientSize.Width >= 700 && _chapterTab.ClientSize.Height >= 300)
         {
             var chapterGroupX = 520 + GetPreviewColumnExtra().Width;
-            _chapterGroup.SetBounds(chapterGroupX, 145,
+            _chapterGroup.SetBounds(chapterGroupX, 101,
                 Math.Max(300, Math.Min(MaxSegmentGroupWidth, _chapterTab.ClientSize.Width - chapterGroupX - edge)),
-                Math.Max(120, _chapterTab.ClientSize.Height - 145 - edge));
+                Math.Max(120, _chapterTab.ClientSize.Height - 101 - edge));
             UpdateChapterListBounds();
         }
         UpdatePreviewColumnLayout();
@@ -1700,12 +1700,12 @@ internal sealed partial class MainForm : Form
     // 区間一覧 (グループ) の幅の上限。これ以上は一覧に回さず、増分はすべてプレビューへ回す。
     private const int MaxSegmentGroupWidth = 740;
 
-    /// <summary>ウィンドウの最小サイズからの増分を、プレビューへ割り当てる量に換算する (横は7割、縦はすべて。一覧が最大幅に達した分は横もすべてプレビューへ回す)。</summary>
+    /// <summary>ウィンドウの設計サイズ (1120x900) からの増分を、プレビューへ割り当てる量に換算する (横は7割、縦はすべて。一覧が最大幅に達した分は横もすべてプレビューへ回す)。増分の起点は最小サイズではなく設計サイズに固定する (最小サイズのときの配置を、最小サイズとは独立に決めるため)。</summary>
     private (int Width, int Height) GetPreviewColumnExtra()
     {
-        var growth = Math.Max(0, Width - MinimumSize.Width);
+        var growth = Math.Max(0, Width - 1120);
         var width = (int)Math.Floor(growth * 0.7);
-        var height = Math.Max(0, Height - MinimumSize.Height);
+        var height = Math.Max(0, Height - 900);
         // 表示中でないタブページの ClientSize は古いまま残ることがあるため、
         // 一覧 (グループ) の幅が上限を超える分の計算は、表示中のプレビューページの幅で行う。
         var previewPage = _tabs != null && _tabs.SelectedTab == _chapterTab ? _chapterTab : _cutTab;
@@ -3008,8 +3008,8 @@ internal sealed partial class MainForm : Form
             var bounds = WindowState == FormWindowState.Normal ? Size : RestoreBounds.Size;
             if (bounds.Width > 0 && bounds.Height > 0)
             {
-                _settings.WindowWidth = Math.Max(1120, bounds.Width);
-                _settings.WindowHeight = Math.Max(900, bounds.Height);
+                _settings.WindowWidth = Math.Max(1263, bounds.Width);
+                _settings.WindowHeight = Math.Max(960, bounds.Height);
             }
         }
         if (!_settings.Save())
