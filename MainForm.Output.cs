@@ -77,6 +77,9 @@ internal sealed partial class MainForm
     {
         if (sender is not ComboBox combo) return;
         var isEditPart = (e.State & DrawItemState.ComboBoxEdit) != 0;
+        // 表示部分は ThemedComboBox の自前描画で描くため、ここでは描かない。
+        // 描く経路が 1 つだけになり、文字の位置が固定される。
+        if (isEditPart && sender is ThemedComboBox) return;
         var isSelected = (e.State & DrawItemState.Selected) != 0;
         // 背景は OS の選択色を使わず、テーマの色で塗る。編集部分はフォーカス時でも背景色のまま、
         // リストの選択行はテーマの選択色にする。

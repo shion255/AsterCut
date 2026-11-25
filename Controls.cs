@@ -912,19 +912,52 @@ internal sealed class RichTextBoxWheelHook : NativeWindow
 /// </summary>
 internal sealed class ThemedComboBox : ComboBox
 {
-    private const int WmPaint = 0x000F;
-
-    protected override void WndProc(ref Message m)
+    public ThemedComboBox()
     {
-        base.WndProc(ref m);
-        if (m.Msg != WmPaint || DropDownStyle != ComboBoxStyle.DropDownList) return;
-        using var graphics = CreateGraphics();
-        // 枠線も OS の色 (白など) で描かれてしまうため、テーマの枠色で描き直す。
+        // 顔の部分 (選択中の項目を表示する部分) は自前で描く。
+        // 標準の描画のあとにテーマ色を上描きする作りだと、描き直しのたびに色の切り替わりがチカチカして見えるため。
+        // 一覧の項目は従来どおり DrawItem で描かれる。
+        SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint
+            | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+    }
+
+    protected override void OnSelectedIndexChanged(EventArgs e)
+    {
+        base.OnSelectedIndexChanged(e);
+        // 自前描画では、プログラムからの選択変更だけでは再描画が要求されず、
+        // 表示がマウスオーバーするまで古いままになるため、自分で要求する。
+        Invalidate();
+    }
+
+    protected override void OnTextChanged(EventArgs e)
+    {
+        base.OnTextChanged(e);
+        Invalidate();
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        var graphics = e.Graphics;
+        var buttonWidth = SystemInformation.VerticalScrollBarWidth;
+        using (var brush = new SolidBrush(Enabled ? BackColor : Color.FromArgb(44, 42, 54)))
+        {
+            graphics.FillRectangle(brush, ClientRectangle);
+        }
+        var text = Text;
+        if (text.Length > 0)
+        {
+            // 表示部分はこの描画だけで描く (DrawItem は一覧の項目だけを描く) ため、文字の位置は固定される。
+            // 先頭の余白は、従来の項目描画で付いていた位置に合わせる。
+            var shift = Math.Max(1, (int)Math.Round(Height / 24.0));
+            var bounds = new Rectangle(4, -shift, Width - buttonWidth - 4, Height);
+            TextRenderer.DrawText(graphics, text, Font, bounds, Enabled ? ForeColor : Theme.MutedFore,
+                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding | TextFormatFlags.EndEllipsis);
+        }
+        // 枠線も OS の色 (白など) で描かれてしまうため、テーマの枠色で描く。
         using (var pen = new Pen(Color.FromArgb(88, 80, 110)))
         {
             graphics.DrawRectangle(pen, 0, 0, Width - 1, Height - 1);
         }
-        var buttonWidth = SystemInformation.VerticalScrollBarWidth;
         var buttonRect = new Rectangle(Width - buttonWidth - 1, 1, buttonWidth, Height - 2);
         using (var brush = new SolidBrush(Enabled ? Color.FromArgb(58, 54, 72) : Color.FromArgb(44, 42, 54)))
         {
@@ -971,13 +1004,25 @@ internal sealed class ThemedTabControl : TabControl
         return Rectangle.FromLTRB(rect.Left, rect.Top, rect.Right, rect.Bottom);
     }
 
-    protected override void WndProc(ref Message m)
+    public ThemedTabControl()
     {
-        base.WndProc(ref m);
-        if (m.Msg != WmPaint || TabCount == 0) return;
+        // 帯とタブは自前で描く。標準の描画のあとにテーマ色で塗り直す作りだと、
+        // 描き直しのたびに色の切り替わりがチカチカして見えるため。
+        SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint
+            | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
         try
         {
-            using var graphics = CreateGraphics();
+            var graphics = e.Graphics;
+            if (TabCount == 0)
+            {
+                using var back = new SolidBrush(Theme.PageBack);
+                graphics.FillRectangle(back, ClientRectangle);
+                return;
+            }
             var stripBottom = 0;
             for (var i = 0; i < TabCount; i++) stripBottom = Math.Max(stripBottom, GetTabRect(i).Bottom);
             var display = GetDisplayRect();
