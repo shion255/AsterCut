@@ -802,7 +802,8 @@ internal sealed partial class MainForm
             _mpvHostPanel.Visible
             && _mpvHostPanel.Parent == popup
             && _mpvHostPanel.RectangleToScreen(_mpvHostPanel.ClientRectangle).Contains(Control.MousePosition)
-            && IsPointerOverPreviewWindow(Control.MousePosition));
+            && IsPointerOverPreviewWindow(Control.MousePosition),
+            TogglePreviewPlayback);
     }
 
     /// <summary>
