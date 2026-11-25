@@ -1642,9 +1642,9 @@ internal sealed partial class MainForm : Form
         }
         if (_outputTab.ClientSize.Width >= 400)
         {
-            _outputPathGroup.SetBounds(edge, 12, _outputTab.ClientSize.Width - edge * 2, 219);
-            _editSummaryGroup.SetBounds(edge, 239, _outputTab.ClientSize.Width - edge * 2, 146);
-            _encodeSettingsGroup.SetBounds(edge, 393, _outputTab.ClientSize.Width - edge * 2, 218);
+            _outputPathGroup.SetBounds(edge, 12, _outputTab.ClientSize.Width - edge * 2, 193);
+            _editSummaryGroup.SetBounds(edge, 213, _outputTab.ClientSize.Width - edge * 2, 146);
+            _encodeSettingsGroup.SetBounds(edge, 367, _outputTab.ClientSize.Width - edge * 2, 218);
         }
         if (_cutTab.ClientSize.Width >= 700 && _cutTab.ClientSize.Height >= 300)
         {

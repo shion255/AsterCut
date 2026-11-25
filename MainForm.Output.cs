@@ -104,7 +104,7 @@ internal sealed partial class MainForm
     private void BuildOutputTab()
     {
         // ---- エンコード設定 (プロファイルと再エンコード設定) ----
-        _encodeSettingsGroup = Theme.MakeGroupPanel(10, 393, 1015, 218, "エンコード設定");
+        _encodeSettingsGroup = Theme.MakeGroupPanel(10, 367, 1015, 218, "エンコード設定");
         _outputTab.Controls.Add(_encodeSettingsGroup);
         // ラベルの枠がコンボに重なって文字を隠さないよう、幅は画面のフォントで測った文字の実幅に合わせる。
         var profileLabel = Theme.MakeLabel("プロファイル:", 16, 22, 110, 28);
@@ -189,7 +189,7 @@ internal sealed partial class MainForm
         _encodeSettingsGroup.Controls.Add(_encodeRunButton);
 
         // ---- 出力先 (フォルダーのみ。ファイル名は自動) ----
-        _outputPathGroup = Theme.MakeGroupPanel(10, 12, 1015, 219, "出力先:");
+        _outputPathGroup = Theme.MakeGroupPanel(10, 12, 1015, 193, "出力先:");
         _outputTab.Controls.Add(_outputPathGroup);
         _outputPathGroup.Controls.Add(Theme.MakeLabel("フォルダーパス:", 12, 31, 100, 26));
         _outputDirBox = Theme.MakeTextBox(98, 31, 540);
@@ -233,7 +233,7 @@ internal sealed partial class MainForm
         _writeEditorMetadataCheckBox = MakeCheckBox("メタデータを書き込む（編集内容・編集日時・区間・解像度・エンコード設定など。MKV / MP4 / MOV / M4V のみ）", 150, 980, true);
         _outputPathGroup.Controls.Add(_writeEditorMetadataCheckBox);
 
-        _editSummaryGroup = Theme.MakeGroupPanel(10, 239, 1015, 146, "編集内容");
+        _editSummaryGroup = Theme.MakeGroupPanel(10, 213, 1015, 146, "編集内容");
         _outputTab.Controls.Add(_editSummaryGroup);
         _editSummaryLabel = Theme.MakeLabel("入力動画を読み込んでください。", 12, 24, 991, 56);
         _editSummaryGroup.Controls.Add(_editSummaryLabel);
