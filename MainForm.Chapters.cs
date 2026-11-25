@@ -140,6 +140,8 @@ internal sealed partial class MainForm
         _chapterTab.Controls.Add(Theme.MakeLabel("出力先:", 14, 432, 60));
         _chapterOutputPathBox = Theme.MakeTextBox(14, 458, 386);
         _chapterTab.Controls.Add(_chapterOutputPathBox);
+        _chapterOutputPathBox.HandleCreated += (_, _) => ApplyTextBoxMarginsOnce(_chapterOutputPathBox, 2, 0);
+        ApplyTextBoxMarginsOnce(_chapterOutputPathBox, 2, 0);
         var browseFolderButton = Theme.MakeButton("フォルダー...", 408, 456, 100, 30);
         browseFolderButton.Click += (_, _) =>
         {
