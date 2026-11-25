@@ -91,6 +91,7 @@ internal sealed partial class MainForm : Form
     private readonly Panel _logGroup;
     private readonly Panel _specGroup;
     private readonly TextBox _logTextBox;
+    private int _logLineCount;
     private readonly RichTextBox _specTextBox;
     private RichTextBoxWheelHook? _specWheelHook;
     private readonly ComboBox _specSectionCombo;
@@ -1824,14 +1825,44 @@ internal sealed partial class MainForm : Form
     {
         if (_logTextBox.IsDisposed) return;
         var stamp = DateTime.Now.ToString("HH:mm:ss");
-        _logTextBox.AppendText($"[{stamp}] {message}\r\n");
-        AppendOutputLogPopupLine($"[{stamp}] {message}");
+        var line = $"[{stamp}] {message}";
+        _logTextBox.AppendText(line + "\r\n");
+        _logLineCount++;
+        AppendOutputLogPopupLine(line);
+        TrimLogTextBoxIfNeeded();
+        ScrollLogToEnd();
+    }
+
+    /// <summary>複数の行をまとめてログへ書く。追記と切り詰めとスクロールを 1 回ずつで済ませ、1 行ごとの全文読み直しを避ける。</summary>
+    public void WriteLogRange(IReadOnlyList<string> messages)
+    {
+        if (_logTextBox.IsDisposed || messages.Count == 0) return;
+        var stamp = DateTime.Now.ToString("HH:mm:ss");
+        var stamped = new string[messages.Count];
+        var builder = new StringBuilder();
+        for (var i = 0; i < messages.Count; i++)
+        {
+            stamped[i] = $"[{stamp}] {messages[i]}";
+            builder.Append(stamped[i]).Append("\r\n");
+        }
+        _logTextBox.AppendText(builder.ToString());
+        _logLineCount += messages.Count;
+        AppendOutputLogPopupRange(stamped);
+        TrimLogTextBoxIfNeeded();
+        ScrollLogToEnd();
+    }
+
+    /// <summary>ログの行数が上限を超えたときだけ、全文を読んで古い行を切り詰める。通常の書き込みでは行数だけを数え、全文の読み直しはしない。</summary>
+    private void TrimLogTextBoxIfNeeded()
+    {
+        if (_logLineCount <= 1500) return;
         var lines = _logTextBox.Lines;
         if (lines.Length > 1500)
         {
             _logTextBox.Lines = lines[(lines.Length - 1000)..];
+            _logLineCount = 1000;
         }
-        ScrollLogToEnd();
+        else _logLineCount = lines.Length;
     }
 
     private void ScrollLogToEnd()

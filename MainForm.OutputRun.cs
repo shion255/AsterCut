@@ -241,7 +241,7 @@ internal sealed partial class MainForm
             var errorLines = stderrText.Split(new[] { "\r\n", "\n", "\r" }, StringSplitOptions.None)
                 .Where(line => !string.IsNullOrWhiteSpace(line)).ToList();
             _lastProcessErrorTail = string.Join("\r\n", errorLines.TakeLast(14));
-            foreach (var line in errorLines) WriteLog(line.TrimEnd());
+            WriteLogRange(errorLines.Select(line => line.TrimEnd()).ToArray());
         }
         else
         {
@@ -497,20 +497,44 @@ internal sealed partial class MainForm
 
     private void AppendOutputLogPopupLine(string line)
     {
+        var trimmed = false;
         if (_outputLogPopupSession)
         {
             _outputLogLines.Add(line);
-            if (_outputLogLines.Count > 1500) _outputLogLines.RemoveRange(0, _outputLogLines.Count - 1000);
+            if (_outputLogLines.Count > 1500)
+            {
+                _outputLogLines.RemoveRange(0, _outputLogLines.Count - 1000);
+                trimmed = true;
+            }
         }
         if (!_outputLogCapture) return;
         var box = _outputLogPopupBox;
         if (box == null || box.IsDisposed) return;
-        box.AppendText(line + "\r\n");
-        var lines = box.Lines;
-        if (lines.Length > 1500)
+        if (trimmed) box.Text = string.Join("\r\n", _outputLogLines) + "\r\n";
+        else box.AppendText(line + "\r\n");
+        box.SelectionStart = box.TextLength;
+        box.SelectionLength = 0;
+        box.ScrollToCaret();
+    }
+
+    /// <summary>複数の行をまとめてポップアップへ書く。追記とスクロールを 1 回ずつで済ませ、1 行ごとの全文読み直しを避ける。</summary>
+    private void AppendOutputLogPopupRange(IReadOnlyList<string> lines)
+    {
+        var trimmed = false;
+        if (_outputLogPopupSession)
         {
-            box.Lines = lines[(lines.Length - 1000)..];
+            _outputLogLines.AddRange(lines);
+            if (_outputLogLines.Count > 1500)
+            {
+                _outputLogLines.RemoveRange(0, _outputLogLines.Count - 1000);
+                trimmed = true;
+            }
         }
+        if (!_outputLogCapture) return;
+        var box = _outputLogPopupBox;
+        if (box == null || box.IsDisposed) return;
+        if (trimmed) box.Text = string.Join("\r\n", _outputLogLines) + "\r\n";
+        else box.AppendText(string.Join("\r\n", lines) + "\r\n");
         box.SelectionStart = box.TextLength;
         box.SelectionLength = 0;
         box.ScrollToCaret();
