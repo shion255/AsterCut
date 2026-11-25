@@ -104,17 +104,17 @@ internal sealed partial class MainForm
     private void BuildOutputTab()
     {
         // ---- エンコード設定 (プロファイルと再エンコード設定) ----
-        _encodeSettingsGroup = Theme.MakeGroupPanel(10, 367, 1015, 218, "エンコード設定");
+        _encodeSettingsGroup = Theme.MakeGroupPanel(10, 367, 1015, 229, "エンコード設定");
         _outputTab.Controls.Add(_encodeSettingsGroup);
         // ラベルの枠がコンボに重なって文字を隠さないよう、幅は画面のフォントで測った文字の実幅に合わせる。
-        var profileLabel = Theme.MakeLabel("プロファイル:", 16, 22, 110, 28);
+        var profileLabel = Theme.MakeLabel("プロファイル:", 16, 33, 110, 28);
         profileLabel.Width = TextRenderer.MeasureText(profileLabel.Text, Font).Width;
         _encodeSettingsGroup.Controls.Add(profileLabel);
-        _profileCombo = MakeFormatCombo(112, 22, 220);
+        _profileCombo = MakeFormatCombo(112, 33, 220);
         _encodeSettingsGroup.Controls.Add(_profileCombo);
-        _addProfileButton = Theme.MakeButton("プロファイルを追加", 340, 21, 150, 30);
+        _addProfileButton = Theme.MakeButton("プロファイルを追加", 340, 33, 150, 30);
         _encodeSettingsGroup.Controls.Add(_addProfileButton);
-        _saveProfileButton = Theme.MakeButton("現在のプロファイルに保存", 498, 21, 210, 30);
+        _saveProfileButton = Theme.MakeButton("現在のプロファイルに保存", 498, 33, 210, 30);
         _encodeSettingsGroup.Controls.Add(_saveProfileButton);
         // グループの題字ラベル (幅 480) が行の上端に重なって枠を隠すため、手前に出す。
         _profileCombo.BringToFront();
@@ -129,7 +129,7 @@ internal sealed partial class MainForm
             Font = new Font(Font.FontFamily, 12f, FontStyle.Bold),
             ForeColor = Color.FromArgb(150, 128, 205),
             BackColor = Theme.BoxBack,
-            Location = new Point(117, 23),
+            Location = new Point(117, 34),
             Visible = false,
         };
         _encodeSettingsGroup.Controls.Add(_profileDirtyLabel);
@@ -139,13 +139,13 @@ internal sealed partial class MainForm
         _outputToolTip.SetToolTip(_addProfileButton, "現在の設定値で新しいプロファイルを作成します。\r\n名前は、右クリックで変更できます。");
         _outputToolTip.SetToolTip(_saveProfileButton, "現在の設定値を、選択中のプロファイルへ上書き保存します。");
 
-        _encodeSettingsGroup.Controls.Add(Theme.MakeLabel("映像フォーマット:", 16, 56, 130, 28));
-        _videoFormatCombo = MakeFormatCombo(148, 56, 110);
+        _encodeSettingsGroup.Controls.Add(Theme.MakeLabel("映像フォーマット:", 16, 67, 130, 28));
+        _videoFormatCombo = MakeFormatCombo(148, 67, 110);
         foreach (var format in VideoFormatNames) _videoFormatCombo.Items.Add(format);
         _encodeSettingsGroup.Controls.Add(_videoFormatCombo);
-        var crfLabel = Theme.MakeLabel("画質 (crf):", 274, 56, 82, 28);
+        var crfLabel = Theme.MakeLabel("画質 (crf):", 274, 67, 82, 28);
         _encodeSettingsGroup.Controls.Add(crfLabel);
-        _videoCrfBox = Theme.MakeTextBox(357, 56, 70, 28);
+        _videoCrfBox = Theme.MakeTextBox(357, 67, 70, 28);
         _videoCrfBox.ImeMode = ImeMode.Disable;
         _videoCrfBox.Text = "23.0";
         _videoCrfBox.TextAlign = HorizontalAlignment.Center;
@@ -153,10 +153,10 @@ internal sealed partial class MainForm
         _videoCrfBox.KeyDown += (_, e) => CrfBoxKeyDown(e);
         _videoCrfBox.Leave += (_, _) => CommitCrfBoxText();
         _encodeSettingsGroup.Controls.Add(_videoCrfBox);
-        var bitDepthLabel = Theme.MakeLabel("ビット数:", 449, 56, 80, 28);
+        var bitDepthLabel = Theme.MakeLabel("ビット数:", 449, 67, 80, 28);
         bitDepthLabel.Width = TextRenderer.MeasureText(bitDepthLabel.Text, Font).Width;
         _encodeSettingsGroup.Controls.Add(bitDepthLabel);
-        _bitDepthCombo = MakeFormatCombo(522, 56, 90);
+        _bitDepthCombo = MakeFormatCombo(522, 67, 90);
         _encodeSettingsGroup.Controls.Add(_bitDepthCombo);
         // 画質のツールチップは、自動表示だとボックスに被ってしまうため、
         // 再生速度の欄と同じくボックスのすぐ下に固定して出す (ラベルに重ねたときも同じ位置)。
@@ -170,20 +170,20 @@ internal sealed partial class MainForm
         _videoCrfBox.MouseLeave += (_, _) => crfToolTip.Hide(_videoCrfBox);
         crfLabel.MouseLeave += (_, _) => crfToolTip.Hide(_videoCrfBox);
 
-        _encodeSettingsGroup.Controls.Add(Theme.MakeLabel("音声フォーマット:", 16, 90, 130, 28));
-        _audioFormatCombo = MakeFormatCombo(148, 90, 110);
+        _encodeSettingsGroup.Controls.Add(Theme.MakeLabel("音声フォーマット:", 16, 101, 130, 28));
+        _audioFormatCombo = MakeFormatCombo(148, 101, 110);
         foreach (var format in AudioFormatNames) _audioFormatCombo.Items.Add(format);
         _encodeSettingsGroup.Controls.Add(_audioFormatCombo);
-        _encodeSettingsGroup.Controls.Add(Theme.MakeLabel("音質 (bit rate):", 274, 90, 116, 28));
-        _audioBitrateCombo = MakeFormatCombo(357, 90, 105);
+        _encodeSettingsGroup.Controls.Add(Theme.MakeLabel("音質 (bit rate):", 274, 101, 116, 28));
+        _audioBitrateCombo = MakeFormatCombo(357, 101, 105);
         _encodeSettingsGroup.Controls.Add(_audioBitrateCombo);
 
-        _encodeSettingsGroup.Controls.Add(Theme.MakeLabel("コンテナ:", 16, 124, 130, 28));
-        _containerCombo = MakeFormatCombo(148, 124, 110);
+        _encodeSettingsGroup.Controls.Add(Theme.MakeLabel("コンテナ:", 16, 135, 130, 28));
+        _containerCombo = MakeFormatCombo(148, 135, 110);
         _encodeSettingsGroup.Controls.Add(_containerCombo);
         _outputToolTip.SetToolTip(_containerCombo, "出力ファイルのコンテナ。\r\nWebM は映像 AV1 + 音声 Opus の組み合わせのときだけ選べます。");
 
-        _encodeRunButton = Theme.MakeButton("エンコードして出力", 12, 168, 160, 40);
+        _encodeRunButton = Theme.MakeButton("エンコードして出力", 12, 179, 160, 40);
         _encodeRunButton.Enabled = false;
         _encodeRunButton.BackColor = Theme.Accent;
         _encodeSettingsGroup.Controls.Add(_encodeRunButton);
