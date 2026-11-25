@@ -15,7 +15,6 @@ internal sealed partial class MainForm
     private Label _profileDirtyLabel = null!;
     private Button _addProfileButton = null!;
     private Button _saveProfileButton = null!;
-    private Button _deleteProfileButton = null!;
     private ComboBox _videoFormatCombo = null!;
     private TextBox _videoCrfBox = null!;
     private ComboBox _bitDepthCombo = null!;
@@ -114,13 +113,10 @@ internal sealed partial class MainForm
         _encodeSettingsGroup.Controls.Add(_addProfileButton);
         _saveProfileButton = Theme.MakeButton("現在のプロファイルに保存", 498, 21, 210, 30);
         _encodeSettingsGroup.Controls.Add(_saveProfileButton);
-        _deleteProfileButton = Theme.MakeButton("プロファイルを削除", 716, 21, 150, 30);
-        _encodeSettingsGroup.Controls.Add(_deleteProfileButton);
         // グループの題字ラベル (幅 480) が行の上端に重なって枠を隠すため、手前に出す。
         _profileCombo.BringToFront();
         _addProfileButton.BringToFront();
         _saveProfileButton.BringToFront();
-        _deleteProfileButton.BringToFront();
         // 選択中のプロファイルから設定が変更されたことを示す印。プロファイル欄の右上に重ねて出す。
         // 背景は題字ラベルの帯に馴染むよう、ページの背景色にしておく。
         _profileDirtyLabel = new Label
@@ -135,9 +131,9 @@ internal sealed partial class MainForm
         };
         _encodeSettingsGroup.Controls.Add(_profileDirtyLabel);
         _profileDirtyLabel.BringToFront();
-        _outputToolTip.SetToolTip(_profileDirtyLabel, "選択中のプロファイルから設定が変更されています。「現在のプロファイルに保存」を押すと、変更が保存されて印が消えます。");
-        _outputToolTip.SetToolTip(_profileCombo, "再エンコード設定のプロファイル。profiles フォルダーに 1 件 1 ファイルで保存されます。名前を変える場合は、そのファイルをエクスプローラー等でリネームしてください。");
-        _outputToolTip.SetToolTip(_addProfileButton, "現在の設定値で新しいプロファイルを作成します。名前は profiles フォルダー内のファイルをリネームして変更します。");
+        _outputToolTip.SetToolTip(_profileDirtyLabel, "選択中のプロファイルから設定が変更されています。\r\n「現在のプロファイルに保存」を押すと、変更が保存されて印が消えます。");
+        _outputToolTip.SetToolTip(_profileCombo, "再エンコード設定のプロファイル。\r\nprofiles フォルダーに1件1ファイルで保存されます。\r\n右クリックで並び順の変更、名前の変更、削除ができます (名前の変更と削除は組み込みのプロファイルは除く)。");
+        _outputToolTip.SetToolTip(_addProfileButton, "現在の設定値で新しいプロファイルを作成します。\r\n名前は、右クリックで変更できます。");
         _outputToolTip.SetToolTip(_saveProfileButton, "現在の設定値を、選択中のプロファイルへ上書き保存します。");
 
         _encodeSettingsGroup.Controls.Add(Theme.MakeLabel("映像フォーマット:", 16, 56, 130, 28));
@@ -182,7 +178,7 @@ internal sealed partial class MainForm
         _encodeSettingsGroup.Controls.Add(Theme.MakeLabel("コンテナ:", 16, 124, 130, 28));
         _containerCombo = MakeFormatCombo(148, 124, 110);
         _encodeSettingsGroup.Controls.Add(_containerCombo);
-        _outputToolTip.SetToolTip(_containerCombo, "出力ファイルのコンテナ。WebM は映像 AV1 + 音声 Opus の組み合わせのときだけ選べます。");
+        _outputToolTip.SetToolTip(_containerCombo, "出力ファイルのコンテナ。\r\nWebM は映像 AV1 + 音声 Opus の組み合わせのときだけ選べます。");
 
         _encodeRunButton = Theme.MakeButton("エンコードして出力", 12, 168, 160, 40);
         _encodeRunButton.Enabled = false;
@@ -250,11 +246,9 @@ internal sealed partial class MainForm
         _outputDirBox.HandleCreated += (_, _) => ApplyTextBoxMarginsOnce(_outputDirBox, 2, 0);
         if (_outputDirBox.IsHandleCreated) ApplyTextBoxMarginsOnce(_outputDirBox, 2, 0);
         _profileCombo.SelectedIndexChanged += (_, _) => OnProfileSelectionChanged();
-        _profileCombo.DropDown += (_, _) => RefreshProfileCombo(_profileCombo.SelectedItem?.ToString());
         _addProfileButton.Click += (_, _) => AddNewProfile();
         _saveProfileButton.Click += (_, _) => SaveCurrentProfile();
-        _deleteProfileButton.Click += (_, _) => DeleteCurrentProfile();
-        InitializeProfileRenameMenu();
+        InitializeProfileMenu();
         _videoFormatCombo.SelectedIndexChanged += (_, _) => OnVideoFormatChanged();
         _audioFormatCombo.SelectedIndexChanged += (_, _) => OnAudioFormatChanged();
         _containerCombo.SelectedIndexChanged += (_, _) => OnContainerChanged();
@@ -577,8 +571,8 @@ internal sealed partial class MainForm
             SetOutputDirText(FormatDirectoryForDisplay(GetDefaultOutputDirectory()));
         }
         _outputToolTip.SetToolTip(_outputFixedNameLabel, _segments.Count > 0
-            ? "出力時のファイル名は自動で決まります。\r\n1 区間の出力には「_cut_[開始 - 終了]」、結合グループには「_cut(区間数)_[カット前の再生時間 to カット後の再生時間]」が付きます (クリッピングの区間は「clip」として数え、混在するグループは「_cut(数)+clip(数)_」になります)。\r\n速度・回転を指定した場合は、その後ろに「_x0.50」「_rot90cw」などが付きます。\r\nクリックすると、出力するファイル名を全て確認できます。"
-            : "出力時のファイル名は自動で決まります。拡張子はコンテナで決まります。\r\n速度・回転・音声トラックを変更した場合は「_x0.50」「_rot90cw」などのサフィックスが付きます。\r\nクリックすると、出力するファイル名を確認できます。");
+            ? "出力時のファイル名は自動で決まります。\r\n1区間の出力には「_cut_[開始 - 終了]」、結合グループには「_cut(区間数)_[カット前の再生時間 to カット後の再生時間]」が付きます (クリッピングの区間は「clip」として数え、混在するグループは「_cut(数)+clip(数)_」になります)。\r\n速度・回転を指定した場合は、その後ろに「_x0.50」「_rot90cw」などが付きます。\r\nクリックすると、出力するファイル名を全て確認できます。"
+            : "出力時のファイル名は自動で決まります。\r\n拡張子はコンテナで決まります。\r\n速度・回転・音声トラックを変更した場合は「_x0.50」「_rot90cw」などのサフィックスが付きます。\r\nクリックすると、出力するファイル名を確認できます。");
         UpdateSplitPathLayout();
     }
 

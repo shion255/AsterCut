@@ -71,7 +71,7 @@ internal sealed partial class MainForm
         _chapterHistoryButton.Font = new Font("Meiryo UI", 8f);
         _chapterHistoryButton.TabStop = false;
         var chapterHistoryToolTip = new ToolTip();
-        chapterHistoryToolTip.SetToolTip(_chapterHistoryButton, "入力チャプターの履歴を表示 (最大 10 件)");
+        chapterHistoryToolTip.SetToolTip(_chapterHistoryButton, "入力チャプターの履歴を表示 (最大10件)");
         _chapterHistoryButton.Click += (_, _) =>
         {
             // ポップアップを閉じるためにボタンが押された直後の Click は飲み込む (入力動画の履歴と同じ)。

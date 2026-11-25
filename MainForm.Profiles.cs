@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Globalization;
 using System.IO;
-using System.Runtime.InteropServices;
 using System.Linq;
 using System.Text;
 using System.Text.Encodings.Web;
@@ -26,7 +25,7 @@ internal sealed class OutputProfile
 
 /// <summary>
 /// 出力プロファイルの読み書きと、出力タブのフォーマット系コンボの連動。
-/// プロファイル名 = ファイル名 (拡張子なし) で、名前の変更はエクスプローラー等でファイルをリネームして行う。
+/// プロファイル名 = ファイル名 (拡張子なし) で、名前の変更と削除はプロファイル欄の右クリックから行う。
 /// </summary>
 internal sealed partial class MainForm
 {
@@ -128,7 +127,7 @@ internal sealed partial class MainForm
         return profile;
     }
 
-    /// <summary>プロファイル名の一覧。組み込みの 2 件を先頭にし、残りは名前順。</summary>
+    /// <summary>プロファイル名の一覧。設定に保存された並び順を優先し、残りは組み込みの 2 件を先頭に名前順。</summary>
     private List<string> ListProfileNames()
     {
         var names = new List<string>();
@@ -145,13 +144,17 @@ internal sealed partial class MainForm
         }
         catch { }
         var ordered = new List<string>();
+        foreach (var saved in _settings.ProfileOrder)
+        {
+            if (names.Contains(saved) && !ordered.Contains(saved)) ordered.Add(saved);
+        }
         foreach (var builtin in new[] { "投稿用", "保存用" })
         {
-            if (names.Contains(builtin)) ordered.Add(builtin);
+            if (names.Contains(builtin) && !ordered.Contains(builtin)) ordered.Add(builtin);
         }
         foreach (var name in names.Where(n => n != "保存用" && n != "投稿用").OrderBy(n => n, StringComparer.CurrentCulture))
         {
-            ordered.Add(name);
+            if (!ordered.Contains(name)) ordered.Add(name);
         }
         return ordered;
     }
@@ -219,7 +222,7 @@ internal sealed partial class MainForm
             _settings.OutputProfileName = name;
             SaveSettingsFromUi();
             UpdateProfileDirtyMark();
-            WriteLog($"プロファイルを追加しました: {name} (名前を変える場合は profiles フォルダー内のファイルをリネームしてください)");
+            WriteLog($"プロファイルを追加しました: {name} (名前は右クリックで変更できます)");
             SetStatus($"プロファイル「{name}」を追加しました");
         }
         catch (Exception ex)
@@ -249,176 +252,354 @@ internal sealed partial class MainForm
         }
     }
 
-    private void DeleteCurrentProfile()
+    private void DeleteProfile(string? targetName)
     {
-        var name = _profileCombo?.SelectedItem?.ToString();
+        // ダイアログを出す前にポップアップを閉じる。開いたままだとダイアログがポップアップを
+        // 所有者として開かれ、ポップアップが非アクティブ化で閉じるときに一緒に閉じてしまうため。
+        CloseProfilePopup();
+        var name = targetName;
         if (string.IsNullOrEmpty(name))
         {
-            MessageBox.Show("削除するプロファイルが選択されていません。", AppTitle, MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBox.Show(this, "削除するプロファイルが選択されていません。", AppTitle, MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
         if (name is "保存用" or "投稿用")
         {
-            MessageBox.Show("組み込みのプロファイルは削除できません。", AppTitle, MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBox.Show(this, "組み込みのプロファイルは削除できません。", AppTitle, MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
-        if (MessageBox.Show($"プロファイル「{name}」を削除しますか？", AppTitle, MessageBoxButtons.OKCancel, MessageBoxIcon.Question) != DialogResult.OK)
+        if (MessageBox.Show(this, $"プロファイル「{name}」を削除しますか？", AppTitle, MessageBoxButtons.OKCancel, MessageBoxIcon.Question) != DialogResult.OK)
         {
             return;
         }
         try
         {
             File.Delete(GetProfileFilePath(name));
-            RefreshProfileCombo("投稿用");
-            ApplySelectedProfile();
+            if (_settings.ProfileOrder.Remove(name)) SaveSettingsFromUi();
+            var wasSelected = _profileCombo?.SelectedItem?.ToString() == name;
+            RefreshProfileCombo(wasSelected ? "投稿用" : _profileCombo?.SelectedItem?.ToString());
+            if (wasSelected) ApplySelectedProfile();
             WriteLog($"プロファイルを削除しました: {name}");
             SetStatus($"プロファイル「{name}」を削除しました");
         }
         catch (Exception ex)
         {
-            MessageBox.Show(ex.Message, AppTitle, MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show(this, ex.Message, AppTitle, MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
 
     // ------------------------------------------------------------------
-    // プロファイルの名前変更 (コンボボックスの右クリックメニュー)
+    // プロファイルの右クリックメニューと自前ポップアップ一覧
     // ------------------------------------------------------------------
 
     private ContextMenuStrip? _profileRenameMenu;
+    private ToolStripMenuItem? _profileMoveUpItem;
+    private ToolStripMenuItem? _profileMoveDownItem;
     private string? _profileRenameTarget;
-    private bool _profileRenameMenuFromList;
-    private IntPtr _profileComboListHandle;
-    private bool _profileListFilterRegistered;
-    private System.Windows.Forms.Timer? _profileMenuTimer;
+    private Form? _profilePopup;
+    private ListBox? _profilePopupList;
+    private DateTime _profilePopupToggleSuppressedUntil;
+    private bool _profileFaceFilterRegistered;
 
-    [DllImport("user32.dll")]
-    private static extern bool GetComboBoxInfo(IntPtr hwndCombo, ref ComboBoxInfo info);
-
-    [DllImport("user32.dll", EntryPoint = "SendMessageW")]
-    private static extern IntPtr SendMessageProfileList(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
-
-    [DllImport("user32.dll")]
-    private static extern bool GetWindowRect(IntPtr hWnd, out NativeRect rect);
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct NativeRect
+    /// <summary>
+    /// プロファイル欄への左クリックを横取りし、標準のドロップダウンの代わりに自前ポップアップを開閉する。
+    /// 標準の一覧は開いている間マウス入力を握り続けるため、その上では右クリックメニューが使えない。
+    /// </summary>
+    private sealed class ProfileFaceFilter : IMessageFilter
     {
-        public int Left;
-        public int Top;
-        public int Right;
-        public int Bottom;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct ComboBoxInfo
-    {
-        public int cbSize;
-        public Rectangle rcItem;
-        public Rectangle rcButton;
-        public int stateButton;
-        public IntPtr hwndCombo;
-        public IntPtr hwndEdit;
-        public IntPtr hwndList;
-    }
-
-    private sealed class ProfileListFilter : IMessageFilter
-    {
-        private const int WmRButtonDown = 0x0204;
+        private const int WmLButtonDown = 0x0201;
+        private const int WmLButtonDblClk = 0x0203;
         private readonly MainForm _form;
 
-        public ProfileListFilter(MainForm form) => _form = form;
+        public ProfileFaceFilter(MainForm form) => _form = form;
 
         public bool PreFilterMessage(ref Message m)
         {
-            if (m.Msg != WmRButtonDown || _form.IsDisposed) return false;
-            return _form.TryProfileListRightClick(m.HWnd);
+            if ((m.Msg != WmLButtonDown && m.Msg != WmLButtonDblClk) || _form.IsDisposed) return false;
+            if (_form._profileCombo == null || !_form._profileCombo.IsHandleCreated) return false;
+            if (m.HWnd != _form._profileCombo.Handle) return false;
+            return _form.ToggleProfilePopup();
         }
     }
 
-    private void InitializeProfileRenameMenu()
+    private void InitializeProfileMenu()
     {
         if (_profileCombo == null) return;
         var menu = new ContextMenuStrip { Renderer = new ToolStripProfessionalRenderer(new AsterCutMenuColorTable()) };
-        var item = new ToolStripMenuItem("名前を変更") { ForeColor = Theme.MenuFore };
-        item.Click += (_, _) => RenameProfile(_profileRenameTarget);
-        menu.Items.Add(item);
+        var moveUpItem = new ToolStripMenuItem("上へ移動") { ForeColor = Theme.MenuFore };
+        moveUpItem.Click += (_, _) => MoveProfile(_profileRenameTarget, -1);
+        menu.Items.Add(moveUpItem);
+        _profileMoveUpItem = moveUpItem;
+        var moveDownItem = new ToolStripMenuItem("下へ移動") { ForeColor = Theme.MenuFore };
+        moveDownItem.Click += (_, _) => MoveProfile(_profileRenameTarget, 1);
+        menu.Items.Add(moveDownItem);
+        _profileMoveDownItem = moveDownItem;
+        menu.Items.Add(new ToolStripSeparator());
+        var renameItem = new ToolStripMenuItem("名前を変更") { ForeColor = Theme.MenuFore };
+        renameItem.Click += (_, _) => RenameProfile(_profileRenameTarget);
+        menu.Items.Add(renameItem);
+        var deleteItem = new ToolStripMenuItem("削除") { ForeColor = Theme.MenuFore };
+        deleteItem.Click += (_, _) => DeleteProfile(_profileRenameTarget);
+        menu.Items.Add(deleteItem);
         menu.Opening += (_, e) =>
         {
-            if (_profileRenameMenuFromList)
-            {
-                _profileRenameMenuFromList = false;
-            }
-            else
+            // 開いたメニューにツールチップが被らないよう、表示中のツールチップを消す。
+            if (_profileCombo != null) _outputToolTip.Hide(_profileCombo);
+            // 一覧から開いたときは右クリックした項目が対象で、コンボ本体から開いたときは選択中の項目が対象。
+            if (!ReferenceEquals(menu.SourceControl, _profilePopupList))
             {
                 _profileRenameTarget = _profileCombo.SelectedItem?.ToString();
             }
-            if (string.IsNullOrEmpty(_profileRenameTarget)) e.Cancel = true;
+            if (string.IsNullOrEmpty(_profileRenameTarget))
+            {
+                e.Cancel = true;
+                return;
+            }
+            var names = ListProfileNames();
+            var index = names.IndexOf(_profileRenameTarget);
+            if (_profileMoveUpItem != null) _profileMoveUpItem.Enabled = index > 0;
+            if (_profileMoveDownItem != null) _profileMoveDownItem.Enabled = index >= 0 && index < names.Count - 1;
         };
         _profileRenameMenu = menu;
         _profileCombo.ContextMenuStrip = menu;
-        _profileCombo.DropDown += (_, _) => CaptureProfileComboListHandle();
-        _profileCombo.DropDownClosed += (_, _) => _profileComboListHandle = IntPtr.Zero;
-        if (!_profileListFilterRegistered)
+        _profileCombo.KeyDown += ProfileComboKeyDown;
+        if (!_profileFaceFilterRegistered)
         {
-            Application.AddMessageFilter(new ProfileListFilter(this));
-            _profileListFilterRegistered = true;
+            Application.AddMessageFilter(new ProfileFaceFilter(this));
+            _profileFaceFilterRegistered = true;
         }
     }
 
-    private void CaptureProfileComboListHandle()
+    private void ProfileComboKeyDown(object? sender, KeyEventArgs e)
     {
-        _profileComboListHandle = IntPtr.Zero;
-        if (_profileCombo == null || !_profileCombo.IsHandleCreated) return;
-        var info = new ComboBoxInfo { cbSize = Marshal.SizeOf<ComboBoxInfo>() };
-        if (GetComboBoxInfo(_profileCombo.Handle, ref info)) _profileComboListHandle = info.hwndList;
+        // ドロップダウンを開くキーは、標準の一覧ではなく自前ポップアップを開閉する。
+        if (e.KeyCode == Keys.F4 || (e.Alt && e.KeyCode == Keys.Down))
+        {
+            e.Handled = true;
+            e.SuppressKeyPress = true;
+            ToggleProfilePopup();
+        }
     }
 
-    /// <summary>ドロップダウン一覧への右クリックなら、その項目を対象にメニューを開く。</summary>
-    private bool TryProfileListRightClick(IntPtr hWnd)
+    /// <summary>自前ポップアップ一覧を開閉する。標準のドロップダウンは開かないため、常に true を返す。</summary>
+    private bool ToggleProfilePopup()
     {
-        if (_profileCombo == null || _profileRenameMenu == null) return false;
-        if (_profileComboListHandle == IntPtr.Zero || hWnd != _profileComboListHandle) return false;
-        // LB_ITEMFROMPOINT には一覧のクライアント座標が要るため、一覧の画面上の位置から割り出す。
-        if (!GetWindowRect(hWnd, out var listRect)) return false;
-        var clientX = Cursor.Position.X - listRect.Left;
-        var clientY = Cursor.Position.Y - listRect.Top;
-        var pointParam = (IntPtr)((clientY << 16) | (clientX & 0xFFFF));
-        const uint LbItemFromPoint = 0x01A9;
-        var result = SendMessageProfileList(hWnd, LbItemFromPoint, IntPtr.Zero, pointParam).ToInt32();
-        var index = result & 0xFFFF;
-        var outside = (result >> 16) != 0;
-        if (outside || index >= _profileCombo.Items.Count) return false;
-        _profileRenameTarget = _profileCombo.Items[index]?.ToString();
-        if (string.IsNullOrEmpty(_profileRenameTarget)) return false;
-        _profileRenameMenuFromList = true;
-        var menu = _profileRenameMenu;
-        var showPoint = Cursor.Position;
-        // 一覧は開いたままにしてメニューだけを重ねる (一覧を先に閉じると環境によっては不安定になるため)。
-        // 一覧は、メニューの項目が選ばれたときに RenameProfile の先頭で閉じる。
-        // メニューの表示は、一覧へのマウスメッセージの処理が終わってからタイマーで出す。
-        _profileMenuTimer?.Stop();
-        _profileMenuTimer?.Dispose();
-        var timer = new System.Windows.Forms.Timer { Interval = 50 };
-        _profileMenuTimer = timer;
-        timer.Tick += (_, _) =>
+        if (_profileCombo == null) return false;
+        if (_profilePopup is { IsDisposed: false })
         {
-            timer.Stop();
-            if (ReferenceEquals(_profileMenuTimer, timer)) _profileMenuTimer = null;
-            timer.Dispose();
-            menu.Show(showPoint);
-        };
-        timer.Start();
+            CloseProfilePopup();
+            return true;
+        }
+        // 一覧を閉じるためのクリック (Deactivate 経由で閉じた直後) では、開き直さない。
+        if (DateTime.UtcNow < _profilePopupToggleSuppressedUntil) return true;
+        _profileCombo.Focus();
+        ShowProfilePopup();
         return true;
+    }
+
+    private void CloseProfilePopup()
+    {
+        var popup = _profilePopup;
+        _profilePopup = null;
+        _profilePopupList = null;
+        if (popup is { IsDisposed: false })
+        {
+            try { popup.Close(); } catch { /* 閉じ済みなら何もしない */ }
+        }
+    }
+
+    private void ShowProfilePopup()
+    {
+        if (_profileCombo == null) return;
+        // 開いた一覧にツールチップが被らないよう、表示中のツールチップを消す。
+        _outputToolTip.Hide(_profileCombo);
+        var popup = new Form
+        {
+            FormBorderStyle = FormBorderStyle.None,
+            ShowInTaskbar = false,
+            StartPosition = FormStartPosition.Manual,
+            BackColor = Theme.BoxBack,
+            ForeColor = Theme.BoxFore,
+            Font = Font,
+            AutoScaleMode = AutoScaleMode.None,
+        };
+        _profilePopup = popup;
+
+        var list = new ListBox
+        {
+            Dock = DockStyle.Fill,
+            BorderStyle = BorderStyle.FixedSingle,
+            BackColor = Theme.BoxBack,
+            ForeColor = Theme.BoxFore,
+            Font = _profileCombo.Font,
+            DrawMode = DrawMode.OwnerDrawFixed,
+            IntegralHeight = false,
+            HorizontalScrollbar = false,
+            ItemHeight = 26,
+            ContextMenuStrip = _profileRenameMenu,
+        };
+        _profilePopupList = list;
+        popup.Controls.Add(list);
+
+        list.DrawItem += (_, e) =>
+        {
+            if (e.Index < 0 || e.Index >= list.Items.Count) return;
+            var isSelected = (e.State & DrawItemState.Selected) != 0;
+            using (var brush = new SolidBrush(isSelected ? Color.FromArgb(86, 74, 110) : Theme.BoxBack))
+            {
+                e.Graphics.FillRectangle(brush, e.Bounds);
+            }
+            var bounds = new Rectangle(e.Bounds.Left + 2, e.Bounds.Top - 1, e.Bounds.Width - 2, e.Bounds.Height);
+            TextRenderer.DrawText(e.Graphics, list.Items[e.Index]?.ToString() ?? "", list.Font, bounds, Theme.BoxFore,
+                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPadding | TextFormatFlags.EndEllipsis);
+        };
+        list.MouseMove += (_, e) =>
+        {
+            var index = list.IndexFromPoint(e.Location);
+            if (index >= 0 && index != list.SelectedIndex)
+            {
+                var previousIndex = list.SelectedIndex;
+                list.SelectedIndex = index;
+                // 選択が移った行は、念のため明示的に描き直す (履歴ポップアップと同じやり方)。
+                try { if (previousIndex >= 0) list.Invalidate(list.GetItemRectangle(previousIndex)); } catch { }
+                try { list.Invalidate(list.GetItemRectangle(index)); } catch { }
+            }
+        };
+        list.MouseDown += (_, e) =>
+        {
+            if (e.Button != MouseButtons.Right) return;
+            var index = list.IndexFromPoint(e.Location);
+            // 項目の無い場所ではメニューを出さない。
+            list.ContextMenuStrip = index >= 0 ? _profileRenameMenu : null;
+            if (index < 0 || index >= list.Items.Count) return;
+            list.SelectedIndex = index;
+            _profileRenameTarget = list.Items[index]?.ToString();
+        };
+        list.MouseClick += (_, e) =>
+        {
+            if (e.Button != MouseButtons.Left) return;
+            var index = list.IndexFromPoint(e.Location);
+            if (index < 0 || index >= list.Items.Count) return;
+            SelectProfileFromPopup(list.Items[index]?.ToString());
+        };
+        list.KeyDown += (_, e) =>
+        {
+            if (e.KeyCode == Keys.Escape)
+            {
+                e.Handled = true;
+                CloseProfilePopup();
+                _profileCombo?.Focus();
+            }
+            else if (e.KeyCode == Keys.Enter && list.SelectedIndex >= 0)
+            {
+                e.Handled = true;
+                SelectProfileFromPopup(list.Items[list.SelectedIndex]?.ToString());
+            }
+        };
+        popup.Deactivate += (_, _) =>
+        {
+            // コンボ本体を押して閉じた場合は、直後に来る本体のクリックで開き直さないよう印を付ける。
+            try
+            {
+                if (_profileCombo is { IsDisposed: false })
+                {
+                    var cursorInCombo = _profileCombo.PointToClient(Control.MousePosition);
+                    if (_profileCombo.ClientRectangle.Contains(cursorInCombo))
+                    {
+                        _profilePopupToggleSuppressedUntil = DateTime.UtcNow.AddMilliseconds(500);
+                    }
+                }
+            }
+            catch { /* 判定できなくても閉じる */ }
+            // 右クリックメニューを開いている間は閉じない (メニューで移動した後も一覧を残すため)。
+            if (_profileRenameMenu is { Visible: true }) return;
+            CloseProfilePopup();
+        };
+        popup.FormClosed += (_, _) =>
+        {
+            if (_profilePopup == popup)
+            {
+                _profilePopup = null;
+                _profilePopupList = null;
+            }
+        };
+
+        RefreshProfilePopupItems(_profileCombo.SelectedItem?.ToString());
+        popup.Width = Math.Max(160, _profileCombo.Width);
+        var belowLeft = _profileCombo.PointToScreen(new Point(0, _profileCombo.Height + 2));
+        var aboveLeft = _profileCombo.PointToScreen(new Point(0, -popup.Height - 2));
+        var workingArea = Screen.FromControl(_profileCombo).WorkingArea;
+        var popupX = belowLeft.X;
+        if (popupX + popup.Width > workingArea.Right) popupX = workingArea.Right - popup.Width;
+        if (popupX < workingArea.Left) popupX = workingArea.Left;
+        var popupY = belowLeft.Y;
+        if (popupY + popup.Height > workingArea.Bottom) popupY = aboveLeft.Y;
+        if (popupY < workingArea.Top) popupY = workingArea.Top;
+        popup.Location = new Point(popupX, popupY);
+        popup.Show(this);
+        list.Focus();
+    }
+
+    /// <summary>ポップアップ一覧の項目を並び順どおりに作り直し、指定した名前を選択する。</summary>
+    private void RefreshProfilePopupItems(string? selectName)
+    {
+        var list = _profilePopupList;
+        if (list == null || list.IsDisposed) return;
+        var names = ListProfileNames();
+        list.BeginUpdate();
+        try
+        {
+            list.Items.Clear();
+            foreach (var name in names) list.Items.Add(name);
+            var index = selectName != null ? names.IndexOf(selectName) : -1;
+            list.SelectedIndex = index >= 0 ? index : (names.Count > 0 ? 0 : -1);
+        }
+        finally { list.EndUpdate(); }
+        if (_profilePopup is { IsDisposed: false })
+        {
+            _profilePopup.Height = Math.Clamp(list.Items.Count, 1, 8) * list.ItemHeight + 2;
+        }
+    }
+
+    private void SelectProfileFromPopup(string? name)
+    {
+        CloseProfilePopup();
+        if (!string.IsNullOrEmpty(name) && _profileCombo != null && _profileCombo.SelectedItem?.ToString() != name)
+        {
+            _profileCombo.SelectedItem = name;
+        }
+        _profileCombo?.Focus();
+    }
+
+    /// <summary>プロファイルの並び順を 1 つ上 (delta = -1) または下 (delta = 1) へ動かし、設定に保存する。組み込みも対象。</summary>
+    private void MoveProfile(string? targetName, int delta)
+    {
+        if (string.IsNullOrEmpty(targetName)) return;
+        var names = ListProfileNames();
+        var index = names.IndexOf(targetName);
+        var newIndex = index + delta;
+        if (index < 0 || newIndex < 0 || newIndex >= names.Count) return;
+        (names[index], names[newIndex]) = (names[newIndex], names[index]);
+        _settings.ProfileOrder = names;
+        SaveSettingsFromUi();
+        RefreshProfileCombo(_profileCombo?.SelectedItem?.ToString());
+        // ポップアップ一覧が開いているときは、一覧を開いたままその場で入れ替えて見せる。
+        if (_profilePopup is { IsDisposed: false })
+        {
+            RefreshProfilePopupItems(targetName);
+            _profilePopup.Activate();
+            _profilePopupList?.Focus();
+        }
     }
 
     private void RenameProfile(string? targetName)
     {
-        if (_profileCombo is { DroppedDown: true }) _profileCombo.DroppedDown = false;
+        CloseProfilePopup();
         var name = targetName;
         if (string.IsNullOrEmpty(name)) return;
         if (name is "保存用" or "投稿用")
         {
-            MessageBox.Show("組み込みのプロファイルは名前を変更できません。", AppTitle, MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBox.Show(this, "組み込みのプロファイルは名前を変更できません。", AppTitle, MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
 
@@ -474,6 +655,12 @@ internal sealed partial class MainForm
         try
         {
             File.Move(GetProfileFilePath(name), GetProfileFilePath(newName));
+            var orderIndex = _settings.ProfileOrder.IndexOf(name);
+            if (orderIndex >= 0)
+            {
+                _settings.ProfileOrder[orderIndex] = newName;
+                SaveSettingsFromUi();
+            }
             var wasSelected = _profileCombo?.SelectedItem?.ToString() == name;
             RefreshProfileCombo(wasSelected ? newName : _profileCombo?.SelectedItem?.ToString());
             if (wasSelected) ApplySelectedProfile();
@@ -482,7 +669,7 @@ internal sealed partial class MainForm
         }
         catch (Exception ex)
         {
-            MessageBox.Show(ex.Message, AppTitle, MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show(this, ex.Message, AppTitle, MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
 
@@ -719,7 +906,7 @@ internal sealed partial class MainForm
         }
         else
         {
-            _outputToolTip.SetToolTip(_audioBitrateCombo, "Opus の目標ビットレート。VBR は常に有効。モノラル音声で 510 kbps を選ぶと、libopus の上限に合わせて 256 kbps を適用します。");
+            _outputToolTip.SetToolTip(_audioBitrateCombo, "Opus の目標ビットレート。\r\nVBR は常に有効。\r\nモノラル音声で 510 kbps を選ぶと、libopus の上限に合わせて 256 kbps を適用します。");
         }
     }
 

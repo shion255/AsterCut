@@ -330,7 +330,7 @@ internal sealed partial class MainForm : Form
         historyButton.Font = new Font("Meiryo UI", 8f);
         historyButton.TabStop = false;
         var historyToolTip = new ToolTip();
-        historyToolTip.SetToolTip(historyButton, "入力動画の履歴を表示 (最大 10 件)");
+        historyToolTip.SetToolTip(historyButton, "入力動画の履歴を表示 (最大10件)");
         historyButton.Click += (_, _) =>
         {
             // ポップアップを閉じるためにボタンが押された直後の Click は飲み込む (トグルが二重に働くのを防ぐ)。
@@ -689,7 +689,7 @@ internal sealed partial class MainForm : Form
         var speedTabToolTip = new ToolTip { AutoPopDelay = 30000, InitialDelay = 300 };
         var speedHintText = string.Join(Environment.NewLine,
             "再生速度を設定します。",
-            "マウスホイールと ↑ / ↓ キーで 0.05 ずつ増減でき、直接入力もできます (0.05 ～ 100.00)。",
+            "マウスホイールと ↑ / ↓ キーで0.05ずつ増減でき、直接入力もできます (0.05 ～ 100.00)。",
             "保持する音声がある速度変更は再エンコードします。",
             "音声なしは（1 区間・クリッピングなしの場合）ストリームコピー方式です。",
             "保持する音声は「ソース」タブで選択します。");

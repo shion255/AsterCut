@@ -30,6 +30,7 @@ internal sealed class AppSettings
     public bool FixedOutputDirectoryEnabled { get; set; }
     public string FixedOutputDirectory { get; set; } = "";
     public string OutputProfileName { get; set; } = "";
+    public List<string> ProfileOrder { get; set; } = new();
     public string SpecJapaneseFontName { get; set; } = "BIZ UDPゴシック";
     public List<string> InputHistory { get; set; } = new();
     public List<string> ChapterInputHistory { get; set; } = new();
@@ -84,6 +85,17 @@ internal sealed class AppSettings
                     if (text.Length == 0 || !seen.Add(text)) continue;
                     settings.ChapterInputHistory.Add(text);
                     if (settings.ChapterInputHistory.Count >= 10) break;
+                }
+            }
+
+            if (root.TryGetProperty("ProfileOrder", out var profileOrder) && profileOrder.ValueKind == JsonValueKind.Array)
+            {
+                var seen = new HashSet<string>(StringComparer.Ordinal);
+                foreach (var item in profileOrder.EnumerateArray())
+                {
+                    var text = (item.ValueKind == JsonValueKind.String ? item.GetString() ?? "" : "").Trim().Trim('"');
+                    if (text.Length == 0 || !seen.Add(text)) continue;
+                    settings.ProfileOrder.Add(text);
                 }
             }
 
