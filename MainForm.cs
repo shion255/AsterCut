@@ -124,6 +124,7 @@ internal sealed partial class MainForm : Form
     private readonly Label _sourceFileSizeValue;
     private readonly Label _sourceFrameRateValue;
     private readonly Label _sourceCodecValue;
+    private readonly Label _sourceResolutionValue;
     private readonly LinkLabel _sourceMetadataTitle;
     private readonly TextBox _sourceMetadataTextBox;
     private readonly ToolTip _sourceToolTip = new();
@@ -387,7 +388,7 @@ internal sealed partial class MainForm : Form
         _tabs.DrawItem += Tabs_DrawItem;
 
         _sourceTab = MakeTabPage("ソース");
-        _sourceInfoGroup = Theme.MakeGroupPanel(10, 12, 1015, 209, "映像情報");
+        _sourceInfoGroup = Theme.MakeGroupPanel(10, 12, 1015, 237, "映像情報");
         // 各項目を「項目名」「値」の 2 列で、1 項目につき 1 行ずつ表示する。
         Label MakeSourceRow(string name, int y, out Label value)
         {
@@ -407,7 +408,8 @@ internal sealed partial class MainForm : Form
         MakeSourceRow("再生時間:", 86, out _sourceDurationValue);
         MakeSourceRow("コンテナ詳細:", 114, out _sourceContainerValue);
         MakeSourceRow("コーデック:", 142, out _sourceCodecValue);
-        MakeSourceRow("フレームレート:", 170, out _sourceFrameRateValue);
+        MakeSourceRow("解像度:", 170, out _sourceResolutionValue);
+        MakeSourceRow("フレームレート:", 198, out _sourceFrameRateValue);
         _sourceMetadataTitle = new LinkLabel
         {
             Text = "_ASTER_CUT (ウィンドウ表示)",
@@ -427,7 +429,7 @@ internal sealed partial class MainForm : Form
         _sourceMetadataTextBox = new TextBox
         {
             Location = new Point(620, 54),
-            Size = new Size(381, 141),
+            Size = new Size(381, 169),
             Anchor = AnchorStyles.Top | AnchorStyles.Left,
             Multiline = true,
             ReadOnly = true,
@@ -442,11 +444,11 @@ internal sealed partial class MainForm : Form
         _sourceInfoGroup.Controls.Add(_sourceMetadataTextBox);
         _sourceTab.Controls.Add(_sourceInfoGroup);
 
-        _audioGroup = Theme.MakeGroupPanel(10, 233, 502, 353, "保持する音声トラック");
+        _audioGroup = Theme.MakeGroupPanel(10, 261, 502, 325, "保持する音声トラック");
         var audioListFrame = new Panel
         {
             Location = new Point(14, 29),
-            Size = new Size(462, 258),
+            Size = new Size(462, 246),
             Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
             BorderStyle = BorderStyle.FixedSingle,
             BackColor = Theme.BoxBack,
@@ -472,21 +474,21 @@ internal sealed partial class MainForm : Form
             }
         };
         _audioGroup.Controls.Add(audioListFrame);
-        var audioAllButton = Theme.MakeButton("すべて保持", 14, 297, 105, 30);
+        var audioAllButton = Theme.MakeButton("すべて保持", 14, 285, 105, 30);
         audioAllButton.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
         audioAllButton.Click += (_, _) => { for (var i = 0; i < _audioList.Items.Count; i++) _audioList.SetItemChecked(i, true); };
-        var audioNoneButton = Theme.MakeButton("すべて削除", 127, 297, 105, 30);
+        var audioNoneButton = Theme.MakeButton("すべて削除", 127, 285, 105, 30);
         audioNoneButton.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
         audioNoneButton.Click += (_, _) => { for (var i = 0; i < _audioList.Items.Count; i++) _audioList.SetItemChecked(i, false); };
         _audioGroup.Controls.Add(audioAllButton);
         _audioGroup.Controls.Add(audioNoneButton);
         _sourceTab.Controls.Add(_audioGroup);
 
-        _keepDataGroup = Theme.MakeGroupPanel(522, 233, 503, 353, "単一区間で保持するデータ");
+        _keepDataGroup = Theme.MakeGroupPanel(522, 261, 503, 325, "単一区間で保持するデータ");
         var keepDataListFrame = new Panel
         {
             Location = new Point(14, 29),
-            Size = new Size(463, 258),
+            Size = new Size(463, 246),
             Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
             BorderStyle = BorderStyle.FixedSingle,
             BackColor = Theme.BoxBack,
@@ -504,10 +506,10 @@ internal sealed partial class MainForm : Form
         keepDataListFrame.Controls.Add(_keepDataList);
         Theme.ApplyDarkScrollBars(_keepDataList);
         _keepDataGroup.Controls.Add(keepDataListFrame);
-        var keepDataAllButton = Theme.MakeButton("すべて保持", 14, 297, 105, 30);
+        var keepDataAllButton = Theme.MakeButton("すべて保持", 14, 285, 105, 30);
         keepDataAllButton.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
         keepDataAllButton.Click += (_, _) => { for (var i = 0; i < _keepDataList.Items.Count; i++) _keepDataList.SetItemChecked(i, true); };
-        var keepDataNoneButton = Theme.MakeButton("すべて削除", 127, 297, 105, 30);
+        var keepDataNoneButton = Theme.MakeButton("すべて削除", 127, 285, 105, 30);
         keepDataNoneButton.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
         keepDataNoneButton.Click += (_, _) => { for (var i = 0; i < _keepDataList.Items.Count; i++) _keepDataList.SetItemChecked(i, false); };
         _keepDataGroup.Controls.Add(keepDataAllButton);
@@ -1626,10 +1628,10 @@ internal sealed partial class MainForm : Form
         const int edge = 10;
         if (_sourceTab.ClientSize.Width >= 400)
         {
-            _sourceInfoGroup.SetBounds(edge, 12, _sourceTab.ClientSize.Width - edge * 2, 209);
+            _sourceInfoGroup.SetBounds(edge, 12, _sourceTab.ClientSize.Width - edge * 2, 237);
             var keepGroupWidth = (_sourceTab.ClientSize.Width - edge * 2 - 10) / 2;
-            _audioGroup.SetBounds(edge, 233, keepGroupWidth, 353);
-            _keepDataGroup.SetBounds(edge + keepGroupWidth + 10, 233, _sourceTab.ClientSize.Width - edge * 2 - keepGroupWidth - 10, 353);
+            _audioGroup.SetBounds(edge, 261, keepGroupWidth, 325);
+            _keepDataGroup.SetBounds(edge + keepGroupWidth + 10, 261, _sourceTab.ClientSize.Width - edge * 2 - keepGroupWidth - 10, 325);
             LayoutSourceInfoColumns(_sourceTab.ClientSize.Width - edge * 2);
         }
         if (_logTab.ClientSize.Width >= 400 && _logTab.ClientSize.Height >= 300)
@@ -2507,6 +2509,12 @@ internal sealed partial class MainForm : Form
     }
 
     // 省略された値だけ、全文をツールチップで表示する。
+    private static long Gcd(long a, long b)
+    {
+        while (b != 0) (a, b) = (b, a % b);
+        return a > 0 ? a : 1;
+    }
+
     private void SetSourceValueText(Label label, string text)
     {
         _sourceValueFullTexts[label] = text;
@@ -2602,6 +2610,21 @@ internal sealed partial class MainForm : Form
             vfrStatus = "VFR 判定中";
         }
         SetSourceValueText(_sourceFrameRateValue, $"{fpsText} / {vfrStatus}");
+
+        if (video != null && video.Width > 0 && video.Height > 0)
+        {
+            // 表示アスペクト比は、解像度にサンプルアスペクト比を掛けたものを約分して出す。
+            var sarNum = video.SampleAspectNum > 0 ? video.SampleAspectNum : 1;
+            var sarDen = video.SampleAspectDen > 0 ? video.SampleAspectDen : 1;
+            var darNum = (long)video.Width * sarNum;
+            var darDen = (long)video.Height * sarDen;
+            var divisor = Gcd(darNum, darDen);
+            SetSourceValueText(_sourceResolutionValue, $"{video.Width} x {video.Height} ({darNum / divisor}:{darDen / divisor})");
+        }
+        else
+        {
+            SetSourceValueText(_sourceResolutionValue, "不明");
+        }
 
         if (video != null)
         {
