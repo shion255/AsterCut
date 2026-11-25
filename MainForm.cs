@@ -290,12 +290,12 @@ internal sealed partial class MainForm : Form
         var header = new Panel
         {
             Dock = DockStyle.Top,
-            Size = new Size(initialClientWidth, 78),
+            Size = new Size(initialClientWidth, 50),
             BackColor = Theme.PanelBack,
         };
 
         header.Controls.Add(Theme.MakeLabel("入力動画:", 12, 8, 75, 26));
-        _inputPathBox = Theme.MakeTextBox(88, 8, 803);
+        _inputPathBox = Theme.MakeTextBox(88, 8, 610);
         _inputPathBox.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
         _inputPathBox.AllowDrop = true;
         _inputPathBox.DragEnter += (_, e) =>
@@ -320,7 +320,7 @@ internal sealed partial class MainForm : Form
         };
         header.Controls.Add(_inputPathBox);
 
-        var historyButton = Theme.MakeButton("▼", 867, 9, 22, 24);
+        var historyButton = Theme.MakeButton("▼", 674, 9, 22, 24);
         historyButton.Anchor = AnchorStyles.Top | AnchorStyles.Right;
         historyButton.FlatAppearance.BorderSize = 0;
         historyButton.FlatAppearance.MouseOverBackColor = Color.FromArgb(58, 54, 72);
@@ -345,19 +345,19 @@ internal sealed partial class MainForm : Form
         header.Controls.Add(historyButton);
         historyButton.BringToFront();
 
-        var inputBrowseButton = Theme.MakeButton("参照...", 899, 6, 78);
+        var inputBrowseButton = Theme.MakeButton("参照...", 706, 6, 78);
         inputBrowseButton.Anchor = AnchorStyles.Top | AnchorStyles.Right;
         inputBrowseButton.Click += (_, _) => BrowseInputFile();
         header.Controls.Add(inputBrowseButton);
-        var inputLoadButton = Theme.MakeButton("読み込み", 983, 6, 105);
+        var inputLoadButton = Theme.MakeButton("読み込み", 790, 6, 105);
         inputLoadButton.Anchor = AnchorStyles.Top | AnchorStyles.Right;
         inputLoadButton.Click += (_, _) => LoadInputRequested();
         header.Controls.Add(inputLoadButton);
 
-        header.Controls.Add(Theme.MakeLabel("プレビュー:", 12, 42, 78, 26));
         _previewBackendCombo = new ThemedComboBox
         {
-            Location = new Point(90, 41),
+            Location = new Point(965, 7),
+            Anchor = AnchorStyles.Top | AnchorStyles.Right,
             Size = new Size(120, 28),
             DropDownStyle = ComboBoxStyle.DropDownList,
             DrawMode = DrawMode.OwnerDrawFixed,
@@ -3050,17 +3050,7 @@ internal sealed partial class MainForm : Form
         }
         crfLabel.Width = crfTextWidth;
         crfLabel.Top = _videoCrfBox.Top + (_videoCrfBox.Height - crfLabel.Height) / 2;
-        var header = _inputPathBox.Parent;
-        // 入力動画の欄は、右端のボタン類との兼ね合いで元の位置・長さのままにする (対象外)。
-        // プレビューの欄は、左端を入力動画の欄とまったく同じ位置にする (幅は変えない)。
-        var previewLabel = FindLabelByText(header, "プレビュー:");
-        _previewBackendCombo.Left = _inputPathBox.Left;
-        if (previewLabel != null)
-        {
-            var previewTextWidth = previewLabel.PreferredWidth;
-            previewLabel.Width = Math.Max(previewTextWidth, _previewBackendCombo.Left - previewLabel.Left - 2);
-            previewLabel.Top = _previewBackendCombo.Top + (_previewBackendCombo.Height - previewLabel.Height) / 2;
-        }
+        // 入力動画の欄とプレビューの欄は、右端のボタン類との兼ね合いで元の位置・長さのままにする (対象外)。
         var cutTab = _cutStartBox.Parent;
         AlignLabelAndBox(FindLabelByText(cutTab, "開始:"), _cutStartBox, gap, true);
         AlignLabelAndBox(FindLabelByText(cutTab, "終了:"), _cutEndBox, gap, true);
