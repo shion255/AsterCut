@@ -133,7 +133,7 @@ internal sealed partial class MainForm
             }
         };
         _chapterTab.Controls.Add(removeButton);
-        var popupButton = Theme.MakeButton("ポップアップ", 272, 357, 115, 30);
+        var popupButton = Theme.MakeButton("ポップアップ", 352, 357, 115, 30);
         popupButton.Click += (_, _) => ShowPreviewPopup();
         _chapterTab.Controls.Add(popupButton);
         // 出力先は、動画編集タブで回転・速度の欄があった位置に置く。
@@ -732,7 +732,7 @@ internal sealed partial class MainForm
         var sharedControls = new Control[]
         {
             _previewPositionLabel, _seekTrackBar, _previewToggleButton,
-            _seekStartButton, _frameBackButton, _frameForwardButton, _seekEndButton,
+            _seekStartButton, _frameBackButton, _frameBack5Button, _frameForwardButton, _frameForward5Button, _seekEndButton,
             _volumeMuteButton, _volumeTrackBar, _volumeValueLabel,
         };
         foreach (var sharedControl in sharedControls)

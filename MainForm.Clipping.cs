@@ -587,11 +587,13 @@ internal sealed partial class MainForm
             Size = new Size(700, 34),
         };
         var clipSeekStart = new SeekIconButton("First", 8, 76, 34, 30, "先頭へシーク", _seekToolTip);
-        var clipFrameBack = new SeekIconButton("Previous", 46, 76, 34, 30, "1 フレーム戻る", _seekToolTip);
-        var clipPlay = Theme.MakeButton("再生", 84, 76, 92, 30);
-        var clipFrameForward = new SeekIconButton("Next", 182, 76, 34, 30, "1 フレーム進む", _seekToolTip);
-        var clipSeekEnd = new SeekIconButton("Last", 220, 76, 34, 30, "末尾へシーク", _seekToolTip);
-        foreach (var control in new Control[] { clipPosition, clipSeek, clipSeekStart, clipFrameBack, clipPlay, clipFrameForward, clipSeekEnd })
+        var clipFrameBack5 = new SeekIconButton("Previous5", 46, 76, 34, 30, "5フレーム戻る", _seekToolTip);
+        var clipFrameBack = new SeekIconButton("Previous", 84, 76, 34, 30, "1フレーム戻る", _seekToolTip);
+        var clipPlay = Theme.MakeButton("再生", 122, 76, 92, 30);
+        var clipFrameForward = new SeekIconButton("Next", 218, 76, 34, 30, "1フレーム進む", _seekToolTip);
+        var clipFrameForward5 = new SeekIconButton("Next5", 256, 76, 34, 30, "5フレーム進む", _seekToolTip);
+        var clipSeekEnd = new SeekIconButton("Last", 294, 76, 34, 30, "末尾へシーク", _seekToolTip);
+        foreach (var control in new Control[] { clipPosition, clipSeek, clipSeekStart, clipFrameBack5, clipFrameBack, clipPlay, clipFrameForward, clipFrameForward5, clipSeekEnd })
         {
             bottom.Controls.Add(control);
         }
@@ -800,8 +802,10 @@ internal sealed partial class MainForm
         clipSeek.MouseWheel += (_, e) => HandleSeekTrackBarMouseWheel(e);
         clipSeekStart.Click += (_, _) => MovePreviewToBoundary(false);
         clipFrameBack.Click += (_, _) => MovePreviewFrame(-1);
+        clipFrameBack5.Click += (_, _) => MovePreviewFrame(-5);
         clipPlay.Click += (_, _) => TogglePreviewPlayback();
         clipFrameForward.Click += (_, _) => MovePreviewFrame(1);
+        clipFrameForward5.Click += (_, _) => MovePreviewFrame(5);
         clipSeekEnd.Click += (_, _) => MovePreviewToBoundary(true);
         clipForm.Resize += (_, _) => { LayoutClippingControls(); SyncClippingOverlay(); };
         // リサイズのドラッグが終わった時点で、mpv の描画が落ち着いてから範囲を取り直す。

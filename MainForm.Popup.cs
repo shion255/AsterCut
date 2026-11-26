@@ -34,22 +34,24 @@ internal sealed partial class MainForm
             _popupSeekTrackBar.Top = 26;
             _popupSeekTrackBar.Width = Math.Max(180, width - 16);
         }
-        // 再生操作は左下にまとめ、先頭・1 フレーム戻る・再生・1 フレーム進む・末尾の順に配置する。
+        // 再生操作は左下にまとめ、先頭・5 フレーム戻る・1 フレーム戻る・再生・1 フレーム進む・5 フレーム進む・末尾の順に配置する。
         if (_popupSeekStartButton != null) { _popupSeekStartButton.Top = 70; _popupSeekStartButton.Width = 34; _popupSeekStartButton.Height = 30; _popupSeekStartButton.Left = 8; }
-        if (_popupFrameBackButton != null) { _popupFrameBackButton.Top = 70; _popupFrameBackButton.Width = 34; _popupFrameBackButton.Height = 30; _popupFrameBackButton.Left = 46; }
+        if (_popupFrameBack5Button != null) { _popupFrameBack5Button.Top = 70; _popupFrameBack5Button.Width = 34; _popupFrameBack5Button.Height = 30; _popupFrameBack5Button.Left = 46; }
+        if (_popupFrameBackButton != null) { _popupFrameBackButton.Top = 70; _popupFrameBackButton.Width = 34; _popupFrameBackButton.Height = 30; _popupFrameBackButton.Left = 84; }
         if (_popupPlayButton != null)
         {
-            _popupPlayButton.Left = 84;
+            _popupPlayButton.Left = 122;
             _popupPlayButton.Top = 70;
             _popupPlayButton.Width = 92;
         }
-        if (_popupFrameForwardButton != null) { _popupFrameForwardButton.Top = 70; _popupFrameForwardButton.Width = 34; _popupFrameForwardButton.Height = 30; _popupFrameForwardButton.Left = 182; }
-        if (_popupSeekEndButton != null) { _popupSeekEndButton.Top = 70; _popupSeekEndButton.Width = 34; _popupSeekEndButton.Height = 30; _popupSeekEndButton.Left = 220; }
+        if (_popupFrameForwardButton != null) { _popupFrameForwardButton.Top = 70; _popupFrameForwardButton.Width = 34; _popupFrameForwardButton.Height = 30; _popupFrameForwardButton.Left = 218; }
+        if (_popupFrameForward5Button != null) { _popupFrameForward5Button.Top = 70; _popupFrameForward5Button.Width = 34; _popupFrameForward5Button.Height = 30; _popupFrameForward5Button.Left = 256; }
+        if (_popupSeekEndButton != null) { _popupSeekEndButton.Top = 70; _popupSeekEndButton.Width = 34; _popupSeekEndButton.Height = 30; _popupSeekEndButton.Left = 294; }
         // 音量コントロールは右下に揃える。
         const int rightPadding = 10;
         const int valueWidth = 48;
         var sliderRight = width - rightPadding - valueWidth - 6;
-        const int minimumButtonStart = 264;
+        const int minimumButtonStart = 334;
         var sliderWidth = Math.Max(110, Math.Min(320, sliderRight - 40 - minimumButtonStart));
         var sliderLeft = sliderRight - sliderWidth;
         if (_popupVolumeTrackBar != null)
@@ -73,7 +75,9 @@ internal sealed partial class MainForm
 
     private Button? _popupSeekStartButton;
     private Button? _popupFrameBackButton;
+    private Button? _popupFrameBack5Button;
     private Button? _popupFrameForwardButton;
+    private Button? _popupFrameForward5Button;
     private Button? _popupSeekEndButton;
 
     private void TogglePreviewPopupControls()
@@ -155,9 +159,11 @@ internal sealed partial class MainForm
             AutoSize = false, Location = new Point(8, 26), Size = new Size(300, 34),
         };
         var popupSeekStart = new SeekIconButton("First", 0, 29, 34, 30, "先頭へシーク", _seekToolTip);
-        var popupFrameBack = new SeekIconButton("Previous", 0, 29, 34, 30, "1 フレーム戻る", _seekToolTip);
+        var popupFrameBack = new SeekIconButton("Previous", 0, 29, 34, 30, "1フレーム戻る", _seekToolTip);
+        var popupFrameBack5 = new SeekIconButton("Previous5", 0, 29, 34, 30, "5フレーム戻る", _seekToolTip);
         var popupPlay = Theme.MakeButton("再生", 0, 29, 92, 30);
-        var popupFrameForward = new SeekIconButton("Next", 0, 29, 34, 30, "1 フレーム進む", _seekToolTip);
+        var popupFrameForward = new SeekIconButton("Next", 0, 29, 34, 30, "1フレーム進む", _seekToolTip);
+        var popupFrameForward5 = new SeekIconButton("Next5", 0, 29, 34, 30, "5フレーム進む", _seekToolTip);
         var popupSeekEnd = new SeekIconButton("Last", 0, 29, 34, 30, "末尾へシーク", _seekToolTip);
         var popupMuteButton = new VolumeIconButton(10, 70, 34, 30);
         var popupVolume = new SeekTrackBar
@@ -176,8 +182,10 @@ internal sealed partial class MainForm
         panel.Controls.Add(popupSeek);
         panel.Controls.Add(popupSeekStart);
         panel.Controls.Add(popupFrameBack);
+        panel.Controls.Add(popupFrameBack5);
         panel.Controls.Add(popupPlay);
         panel.Controls.Add(popupFrameForward);
+        panel.Controls.Add(popupFrameForward5);
         panel.Controls.Add(popupSeekEnd);
         panel.Controls.Add(popupMuteButton);
         panel.Controls.Add(popupVolume);
@@ -194,7 +202,9 @@ internal sealed partial class MainForm
         _popupSeekStartButton = popupSeekStart;
         _popupPlayButton = popupPlay;
         _popupFrameBackButton = popupFrameBack;
+        _popupFrameBack5Button = popupFrameBack5;
         _popupFrameForwardButton = popupFrameForward;
+        _popupFrameForward5Button = popupFrameForward5;
         _popupSeekEndButton = popupSeekEnd;
         _popupPreviewSeeking = false;
         UpdatePreviewPlaybackButtons();
@@ -242,8 +252,10 @@ internal sealed partial class MainForm
         popupMuteButton.Click += (_, _) => TogglePreviewMute();
         popupSeekStart.Click += (_, _) => MovePreviewToBoundary(false);
         popupFrameBack.Click += (_, _) => MovePreviewFrame(-1);
+        popupFrameBack5.Click += (_, _) => MovePreviewFrame(-5);
         popupPlay.Click += (_, _) => TogglePreviewPlayback();
         popupFrameForward.Click += (_, _) => MovePreviewFrame(1);
+        popupFrameForward5.Click += (_, _) => MovePreviewFrame(5);
         popupSeekEnd.Click += (_, _) => MovePreviewToBoundary(true);
         popup.KeyDown += (_, e) =>
         {

@@ -706,6 +706,24 @@ internal sealed class SeekIconButton : Button
                 points[1] = new Point(cx - 6, cy - 8);
                 points[2] = new Point(cx - 6, cy + 8);
                 break;
+            case "Previous5":
+                points[0] = new Point(cx - 10, cy);
+                points[1] = new Point(cx - 1, cy - 7);
+                points[2] = new Point(cx - 1, cy + 7);
+                g.FillPolygon(brush, points);
+                points[0] = new Point(cx + 1, cy);
+                points[1] = new Point(cx + 10, cy - 7);
+                points[2] = new Point(cx + 10, cy + 7);
+                break;
+            case "Next5":
+                points[0] = new Point(cx + 10, cy);
+                points[1] = new Point(cx + 1, cy - 7);
+                points[2] = new Point(cx + 1, cy + 7);
+                g.FillPolygon(brush, points);
+                points[0] = new Point(cx - 1, cy);
+                points[1] = new Point(cx - 10, cy - 7);
+                points[2] = new Point(cx - 10, cy + 7);
+                break;
             case "First":
                 g.DrawLine(pen, cx - 10, cy - 10, cx - 10, cy + 10);
                 points[0] = new Point(cx - 6, cy);
