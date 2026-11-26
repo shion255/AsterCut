@@ -610,32 +610,6 @@ internal sealed partial class MainForm
         public EditState? State { get; set; }
     }
 
-    private async Task OpenEditProjectAsync()
-    {
-        if (_jobRunning)
-        {
-            MessageBox.Show("処理中は編集プロジェクトを開けません。処理が終わってから実行してください。", AppTitle, MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            return;
-        }
-        using var dialog = new OpenFileDialog
-        {
-            Title = "編集プロジェクトを開く",
-            Filter = "AsterCut プロジェクト (*.acproj)|*.acproj|すべてのファイル (*.*)|*.*",
-            Multiselect = false,
-        };
-        if (!string.IsNullOrWhiteSpace(_inputPath))
-        {
-            try
-            {
-                var inputDir = Path.GetDirectoryName(Path.GetFullPath(_inputPath)) ?? "";
-                if (inputDir.Length > 0 && Directory.Exists(inputDir)) dialog.InitialDirectory = inputDir;
-            }
-            catch { }
-        }
-        if (dialog.ShowDialog() != DialogResult.OK) return;
-        await OpenEditProjectFileAsync(dialog.FileName);
-    }
-
     private async Task OpenEditProjectFileAsync(string projectPath)
     {
         if (_jobRunning)

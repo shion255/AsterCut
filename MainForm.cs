@@ -226,7 +226,7 @@ internal sealed partial class MainForm : Form
             ForeColor = Theme.MenuFore,
             ShortcutKeys = Keys.Control | Keys.N,
         };
-        var openProjectItem = new ToolStripMenuItem("編集プロジェクトを開く", null, (_, _) => _ = OpenEditProjectAsync())
+        var openItem = new ToolStripMenuItem("開く", null, (_, _) => BrowseInputFile("ファイルを開く"))
         {
             ForeColor = Theme.MenuFore,
             ShortcutKeys = Keys.Control | Keys.O,
@@ -240,7 +240,7 @@ internal sealed partial class MainForm : Form
         var closeItem = new ToolStripMenuItem("閉じる", null, (_, _) => Close()) { ForeColor = Theme.MenuFore };
         fileMenu.DropDownItems.AddRange(new ToolStripItem[]
         {
-            newItem, openProjectItem, saveProjectItem, restoreItem, new ToolStripSeparator(), closeItem,
+            newItem, openItem, saveProjectItem, restoreItem, new ToolStripSeparator(), closeItem,
         });
 
         var editMenu = new ToolStripMenuItem("編集") { ForeColor = Theme.MenuFore };
@@ -2001,12 +2001,12 @@ internal sealed partial class MainForm : Form
         _ = LoadInputFileAsync(file);
     }
 
-    private void BrowseInputFile()
+    private void BrowseInputFile(string title = "入力動画を選択")
     {
         using var dialog = new OpenFileDialog
         {
             Filter = "動画ファイル|*.mkv;*.mp4;*.mov;*.avi;*.webm;*.m4v;*.ts;*.m2ts;*.mpg;*.mpeg;*.wmv;*.flv;*.acproj|すべてのファイル (*.*)|*.*",
-            Title = "入力動画を選択",
+            Title = title,
         };
         if (dialog.ShowDialog(this) == DialogResult.OK)
         {
