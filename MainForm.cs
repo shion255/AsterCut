@@ -915,6 +915,21 @@ internal sealed partial class MainForm : Form
         var overwriteItem = new ToolStripMenuItem("上書き") { ForeColor = Theme.MenuFore };
         overwriteItem.Click += (_, _) => OverwriteCutSegment(_segmentContextIndex);
         segmentContextMenu.Items.Add(overwriteItem);
+        var copyItem = new ToolStripMenuItem("コピー") { ForeColor = Theme.MenuFore, ShortcutKeyDisplayString = "Ctrl+C" };
+        copyItem.Click += (_, _) => CopySelectedSegments();
+        segmentContextMenu.Items.Add(copyItem);
+        var pasteItem = new ToolStripMenuItem("貼り付け") { ForeColor = Theme.MenuFore, ShortcutKeyDisplayString = "Ctrl+V" };
+        pasteItem.Click += (_, _) => PasteSegments();
+        segmentContextMenu.Items.Add(pasteItem);
+        var duplicateItem = new ToolStripMenuItem("複製") { ForeColor = Theme.MenuFore, ShortcutKeyDisplayString = "Ctrl+D" };
+        duplicateItem.Click += (_, _) => DuplicateSelectedSegments();
+        segmentContextMenu.Items.Add(duplicateItem);
+        segmentContextMenu.Opening += (_, _) =>
+        {
+            copyItem.Enabled = _segmentList.SelectedIndices.Count > 0;
+            pasteItem.Enabled = _segmentClipboard.Count > 0;
+            duplicateItem.Enabled = _segmentList.SelectedIndices.Count > 0;
+        };
         var popupPlayItem = new ToolStripMenuItem("この区間をポップアップ再生") { ForeColor = Theme.MenuFore };
         popupPlayItem.Click += (_, _) => ShowSegmentPreviewPopup(_segmentContextIndex);
         segmentContextMenu.Items.Add(popupPlayItem);
@@ -959,8 +974,47 @@ internal sealed partial class MainForm : Form
                 }
                 return;
             }
+            if (e.KeyCode == Keys.Insert && e.Shift && !e.Control && !e.Alt)
+            {
+                // Shift+Insert は貼り付け。
+                if (_segmentClipboard.Count > 0)
+                {
+                    e.Handled = true;
+                    e.SuppressKeyPress = true;
+                    PasteSegments();
+                }
+                return;
+            }
             if (!e.Control || e.Alt || e.Shift) return;
-            if (e.KeyCode == Keys.Z && _segmentUndoStack.Count > 0)
+            if (e.KeyCode == Keys.C || e.KeyCode == Keys.Insert)
+            {
+                // Ctrl+C と Ctrl+Insert はコピー。
+                if (_segmentList.SelectedIndices.Count > 0)
+                {
+                    e.Handled = true;
+                    e.SuppressKeyPress = true;
+                    CopySelectedSegments();
+                }
+            }
+            else if (e.KeyCode == Keys.V)
+            {
+                if (_segmentClipboard.Count > 0)
+                {
+                    e.Handled = true;
+                    e.SuppressKeyPress = true;
+                    PasteSegments();
+                }
+            }
+            else if (e.KeyCode == Keys.D)
+            {
+                if (_segmentList.SelectedIndices.Count > 0)
+                {
+                    e.Handled = true;
+                    e.SuppressKeyPress = true;
+                    DuplicateSelectedSegments();
+                }
+            }
+            else if (e.KeyCode == Keys.Z && _segmentUndoStack.Count > 0)
             {
                 e.Handled = true;
                 e.SuppressKeyPress = true;

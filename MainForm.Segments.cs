@@ -44,6 +44,8 @@ internal sealed partial class MainForm
     private readonly List<SegmentUndoEntry> _segmentUndoStack = new();
     private readonly List<SegmentUndoEntry> _segmentRedoStack = new();
     private int _segmentContextIndex = -1;
+    // 区間のコピー・貼り付け用の控え (アプリ内だけのクリップボード)。結合はコピー範囲の中での相対関係に直して持つ。
+    private readonly List<Segment> _segmentClipboard = new();
 
     private sealed class SegmentUndoEntry
     {
@@ -677,6 +679,75 @@ internal sealed partial class MainForm
         // チャプターを削除したときの選択の動きとそろえる。
         if (_segments.Count > 0) SelectSegmentIndices(Math.Min(indices[0], _segments.Count - 1));
         WriteLog($"カット区間を削除 ({indices.Count} 件): " + string.Join(" / ", details));
+    }
+
+    /// <summary>コピー元の並びで直前の区間も一緒に選ばれているときだけ、元の結合を保った複製を作る。</summary>
+    private List<Segment> BuildSegmentCopies(IReadOnlyList<int> sourceIndices)
+    {
+        var copies = new List<Segment>();
+        for (var k = 0; k < sourceIndices.Count; k++)
+        {
+            var clone = _segments[sourceIndices[k]].Clone();
+            clone.JoinWithPrevious = k > 0 && sourceIndices[k] == sourceIndices[k - 1] + 1 && clone.JoinWithPrevious;
+            copies.Add(clone);
+        }
+        return copies;
+    }
+
+    /// <summary>複製した区間を選択中の一番下の区間の下へ挿入する。一番下の区間が結合グループの途中にあるときは、結合を切らないようグループの末尾の下へ入れる。挿入した区間は 1 つのまとまりとして独立させる。</summary>
+    private void InsertSegmentCopies(List<Segment> copies, string undoDescription, string logVerb)
+    {
+        if (copies.Count == 0) return;
+        var selected = _segmentList.SelectedIndices.Cast<int>().ToList();
+        var insertAt = _segments.Count;
+        if (selected.Count > 0)
+        {
+            insertAt = selected.Max() + 1;
+            while (insertAt < _segments.Count && _segments[insertAt].JoinWithPrevious) insertAt++;
+        }
+        PushSegmentUndoSnapshot(undoDescription);
+        copies[0].JoinWithPrevious = false;
+        _segments.InsertRange(insertAt, copies);
+        RefreshSegmentList();
+        var selection = new int[copies.Count];
+        for (var i = 0; i < selection.Length; i++) selection[i] = insertAt + i;
+        SelectSegmentIndices(selection);
+        var details = new List<string>();
+        for (var i = 0; i < copies.Count; i++)
+        {
+            var segment = copies[i];
+            details.Add($"index={insertAt + i + 1}; start={TimeText.FormatClockFromMs(segment.StartMs)}; end={TimeText.FormatClockFromMs(segment.EndMs)}");
+        }
+        WriteLog($"カット区間を{logVerb} ({copies.Count} 件): " + string.Join(" / ", details));
+    }
+
+    private void CopySelectedSegments()
+    {
+        var indices = _segmentList.SelectedIndices.Cast<int>().OrderBy(i => i).ToList();
+        if (indices.Count == 0) return;
+        _segmentClipboard.Clear();
+        _segmentClipboard.AddRange(BuildSegmentCopies(indices));
+        var details = new List<string>();
+        foreach (var idx in indices)
+        {
+            var segment = _segments[idx];
+            details.Add($"index={idx + 1}; start={TimeText.FormatClockFromMs(segment.StartMs)}; end={TimeText.FormatClockFromMs(segment.EndMs)}");
+        }
+        WriteLog($"カット区間をコピー ({indices.Count} 件): " + string.Join(" / ", details));
+    }
+
+    private void PasteSegments()
+    {
+        if (_segmentClipboard.Count == 0) return;
+        var copies = _segmentClipboard.Select(segment => segment.Clone()).ToList();
+        InsertSegmentCopies(copies, "区間の貼り付け", "貼り付け");
+    }
+
+    private void DuplicateSelectedSegments()
+    {
+        var indices = _segmentList.SelectedIndices.Cast<int>().OrderBy(i => i).ToList();
+        if (indices.Count == 0) return;
+        InsertSegmentCopies(BuildSegmentCopies(indices), "区間の複製", "複製");
     }
 
     /// <summary>指定した行だけを選択状態にする (複数選択の一覧で、操作後の選択を戻すために使う)。</summary>
