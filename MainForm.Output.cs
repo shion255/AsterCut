@@ -753,7 +753,11 @@ internal sealed partial class MainForm
         {
             var current = losslessRadio.Checked ? lossless : encode;
             if (current == null || current.Value.Items.Count == 0) return;
-            try { Clipboard.SetText(string.Join("\r\n", current.Value.Items.Select(item => item.Command))); } catch { }
+            // 出力が複数のときは見出しも含めて表示どおりにコピーし、1 つのときはコマンドだけをコピーする。
+            var text = current.Value.Items.Count >= 2
+                ? box.Text
+                : string.Join("\r\n", current.Value.Items.Select(item => item.Command));
+            try { Clipboard.SetText(text); } catch { }
         };
         bottomPanel.Controls.Add(copyButton);
         bottomPanel.Controls.Add(closeButton);
