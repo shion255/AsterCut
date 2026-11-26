@@ -1,3 +1,7 @@
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
 using System;
 using System.Drawing;
 using System.IO;
@@ -34,6 +38,7 @@ internal sealed partial class MainForm
     private Button _outputRunButton = null!;
     private Panel _encodeSettingsGroup = null!;
     private Button _encodeRunButton = null!;
+    private Button _showCommandLinesButton = null!;
     private readonly ToolTip _outputToolTip = new();
 
     private bool _outputDirIsCustom;
@@ -187,6 +192,10 @@ internal sealed partial class MainForm
         _encodeRunButton.Enabled = false;
         _encodeRunButton.BackColor = Theme.Accent;
         _encodeSettingsGroup.Controls.Add(_encodeRunButton);
+
+        _showCommandLinesButton = Theme.MakeButton("コマンドラインを表示", 22, 604, 160, 34);
+        _showCommandLinesButton.Click += (_, _) => ShowCommandLinesPopup();
+        _outputTab.Controls.Add(_showCommandLinesButton);
 
         // ---- 出力先 (フォルダーのみ。ファイル名は自動) ----
         _outputPathGroup = Theme.MakeGroupPanel(10, 12, 1015, 193, "出力先");
@@ -577,6 +586,222 @@ internal sealed partial class MainForm
             ? "出力時のファイル名は自動で決まります。\r\n1区間の出力には「_cut_[開始 - 終了]」、結合グループには「_cut(区間数)_[カット前の再生時間 to カット後の再生時間]」が付きます (クリッピングの区間は「clip」として数え、混在するグループは「_cut(数)+clip(数)_」になります)。\r\n速度・回転を指定した場合は、その後ろに「_x0.50」「_rot90cw」などが付きます。\r\nクリックすると、出力するファイル名を全て確認できます。"
             : "出力時のファイル名は自動で決まります。\r\n拡張子はコンテナで決まります。\r\n速度・回転・音声トラックを変更した場合は「_x0.50」「_rot90cw」などのサフィックスが付きます。\r\nクリックすると、出力するファイル名を確認できます。");
         UpdateSplitPathLayout();
+    }
+
+    /// <summary>
+    /// 表示用の組み立てに限り、無劣化の範囲調整の探査を出力ごとに並行して先行させる。
+    /// 探査結果は通常の組み立てと同じキャッシュに入るため、組み立て結果は変わらない。
+    /// </summary>
+    private void PrewarmLosslessProbeCaches()
+    {
+        try
+        {
+            if (Math.Abs(GetSelectedSpeed() - 1.0) >= 0.000001) return;
+            var ranges = new List<(long StartMs, long EndMs)>();
+            if (_segments.Count == 0)
+            {
+                if (_durationMs > 0) ranges.Add((0, _durationMs));
+            }
+            else
+            {
+                // 単独区間のグループだけが無劣化の範囲調整を使う (結合グループは再エンコードになる)。
+                var i = 0;
+                while (i < _segments.Count)
+                {
+                    var j = i;
+                    while (j + 1 < _segments.Count && _segments[j + 1].JoinWithPrevious) j++;
+                    if (j == i) ranges.Add((_segments[i].StartMs, _segments[i].EndMs));
+                    i = j + 1;
+                }
+            }
+            if (ranges.Count < 2) return;
+            Parallel.ForEach(ranges.Distinct(), range =>
+            {
+                try { AdjustLosslessVideoRangeMs(range.StartMs, range.EndMs); } catch { }
+            });
+        }
+        catch { }
+    }
+
+    /// <summary>現在の設定で実行される出力の全ステップを、実行せずに組み立ててコマンドライン文字列にする。</summary>
+    private (List<(string Description, string Command)> Items, string Error) CaptureCommandLines(bool forceEncode)
+    {
+        _previewingCommands = true;
+        _capturedCommandSteps = null;
+        _capturedCommandError = "";
+        try
+        {
+            if (!forceEncode) PrewarmLosslessProbeCaches();
+            StartSelectedOutput(forceEncode);
+        }
+        finally
+        {
+            _previewingCommands = false;
+        }
+        if (_capturedCommandSteps == null) return (new List<(string Description, string Command)>(), _capturedCommandError);
+        var ffmpeg = GetFFmpegPath();
+        var items = _capturedCommandSteps
+            .Select(step => (step.Description, QuoteProcessArgument(ffmpeg) + " " + ConvertToProcessArgumentLine(step.Arguments)))
+            .ToList();
+        return (items, "");
+    }
+
+    /// <summary>「コマンドラインを表示」: 出力前の全コマンドを 1 行ずつポップアップに表示する。無劣化とエンコードを切り替えられ、項目の選択で各出力へ移動できる。</summary>
+    private void ShowCommandLinesPopup()
+    {
+        if (_jobRunning) return;
+        if (_probe == null)
+        {
+            MessageBox.Show("先に入力動画を読み込んでください。", AppTitle, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+        (List<(string Description, string Command)> Items, string Error)? encode = null;
+        var previousStatus = _statusLabel.Text;
+        _statusLabel.Text = "コマンドラインを作成しています...";
+        Cursor.Current = Cursors.WaitCursor;
+        Update();
+        (List<(string Description, string Command)> Items, string Error) lossless;
+        try
+        {
+            lossless = CaptureCommandLines(false);
+        }
+        finally
+        {
+            Cursor.Current = Cursors.Default;
+            _statusLabel.Text = previousStatus;
+        }
+
+        using var popup = new Form
+        {
+            Icon = AppIcon.Value,
+            Text = "コマンドライン",
+            Size = new Size(940, 550),
+            FormBorderStyle = FormBorderStyle.Sizable,
+            MaximizeBox = false,
+            MinimizeBox = false,
+            ShowInTaskbar = false,
+            BackColor = Theme.PageBack,
+            AutoScaleMode = AutoScaleMode.None,
+            StartPosition = FormStartPosition.CenterParent,
+        };
+        var topPanel = new Panel { Dock = DockStyle.Top, Height = 44, BackColor = Theme.PageBack };
+        var losslessRadio = new RadioButton
+        {
+            Text = "無劣化",
+            Location = new Point(12, 11),
+            Size = new Size(90, 24),
+            ForeColor = Theme.LabelFore,
+            Checked = true,
+        };
+        var encodeRadio = new RadioButton
+        {
+            Text = "エンコード",
+            Location = new Point(110, 11),
+            Size = new Size(110, 24),
+            ForeColor = Theme.LabelFore,
+        };
+        topPanel.Controls.Add(losslessRadio);
+        topPanel.Controls.Add(encodeRadio);
+        var jumpCombo = new ThemedComboBox
+        {
+            Location = new Point(240, 9),
+            Size = new Size(430, 25),
+            DropDownStyle = ComboBoxStyle.DropDownList,
+            DrawMode = DrawMode.OwnerDrawFixed,
+            ItemHeight = 21,
+            FlatStyle = FlatStyle.Flat,
+            BackColor = Theme.BoxBack,
+            ForeColor = Color.White,
+        };
+        jumpCombo.DrawItem += DrawSpecSectionComboItem;
+        topPanel.Controls.Add(jumpCombo);
+        var box = new TextBox
+        {
+            Multiline = true,
+            ReadOnly = true,
+            WordWrap = false,
+            ScrollBars = ScrollBars.Both,
+            BackColor = Color.FromArgb(23, 22, 29),
+            ForeColor = Color.FromArgb(203, 198, 216),
+            BorderStyle = BorderStyle.None,
+            Font = new Font("Consolas", 9f),
+            Dock = DockStyle.Fill,
+        };
+        Theme.ApplyDarkScrollBars(box);
+        var bottomPanel = new Panel { Dock = DockStyle.Bottom, Height = 48, BackColor = Theme.PageBack };
+        var copyButton = Theme.MakeButton("コピー", 690, 8, 100, 32);
+        copyButton.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+        var closeButton = Theme.MakeButton("閉じる", 800, 8, 100, 32);
+        closeButton.Anchor = AnchorStyles.Top | AnchorStyles.Right;
+        closeButton.Click += (_, _) => popup.Close();
+        copyButton.Click += (_, _) =>
+        {
+            var current = losslessRadio.Checked ? lossless : encode;
+            if (current == null || current.Value.Items.Count == 0) return;
+            try { Clipboard.SetText(string.Join("\r\n", current.Value.Items.Select(item => item.Command))); } catch { }
+        };
+        bottomPanel.Controls.Add(copyButton);
+        bottomPanel.Controls.Add(closeButton);
+        popup.Controls.Add(box);
+        popup.Controls.Add(bottomPanel);
+        popup.Controls.Add(topPanel);
+        var jumpIndices = new List<int>();
+        void RefreshText()
+        {
+            if (popup.IsDisposed) return;
+            if (!losslessRadio.Checked && encode == null)
+            {
+                box.Text = "作成中...";
+                box.Update();
+                Cursor.Current = Cursors.WaitCursor;
+                try { encode = CaptureCommandLines(true); }
+                finally { Cursor.Current = Cursors.Default; }
+            }
+            var (items, error) = losslessRadio.Checked ? lossless : encode!.Value;
+            jumpIndices.Clear();
+            jumpCombo.Items.Clear();
+            jumpCombo.Items.Add("各出力を選択");
+            jumpIndices.Add(-1);
+            if (items.Count == 0)
+            {
+                box.Text = $"コマンドラインを作成できませんでした。\r\n{error}";
+            }
+            else
+            {
+                var sb = new StringBuilder();
+                for (var i = 0; i < items.Count; i++)
+                {
+                    if (i > 0) sb.Append("\r\n");
+                    jumpIndices.Add(sb.Length);
+                    jumpCombo.Items.Add($"出力 {i + 1}: {items[i].Description}");
+                    sb.Append($"── 出力 {i + 1}: {items[i].Description} ──\r\n");
+                    sb.Append(items[i].Command);
+                    sb.Append("\r\n");
+                }
+                box.Text = sb.ToString().TrimEnd('\r', '\n');
+            }
+            jumpCombo.SelectedIndex = 0;
+            box.SelectionStart = 0;
+            box.SelectionLength = 0;
+        }
+        jumpCombo.SelectedIndexChanged += (_, _) =>
+        {
+            var selected = jumpCombo.SelectedIndex;
+            if (selected < 0 || selected >= jumpIndices.Count) return;
+            var target = jumpIndices[selected];
+            if (target < 0) return;
+            box.Select(0, 0);
+            box.ScrollToCaret();
+            var line = box.GetLineFromCharIndex(target);
+            SendMessage(box.Handle, 0x00B6, IntPtr.Zero, (IntPtr)line); // EM_LINESCROLL
+            box.Select(target, 0);
+        };
+        losslessRadio.CheckedChanged += (_, _) => { if (losslessRadio.Checked) RefreshText(); };
+        encodeRadio.CheckedChanged += (_, _) => { if (encodeRadio.Checked) RefreshText(); };
+        RefreshText();
+        Theme.ApplyDarkTitleBar(popup);
+        popup.ShowDialog(this);
+        box.Font.Dispose();
     }
 
     private void UpdateOutputPathMode()

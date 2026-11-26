@@ -1889,6 +1889,7 @@ internal sealed partial class MainForm : Form
 
     public void WriteLog(string message)
     {
+        if (_previewingCommands) return;
         if (_logTextBox.IsDisposed) return;
         var stamp = DateTime.Now.ToString("HH:mm:ss");
         var line = $"[{stamp}] {message}";

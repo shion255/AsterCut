@@ -60,6 +60,12 @@ internal sealed partial class MainForm
     private readonly List<string> _outputLogLines = new();
     private bool _outputLogPopupSession;
 
+    // コマンドライン表示のためにプランを組み立てるときの取り込み先。
+    // この間は、確認ダイアログを出さず、ログも書かず、StartPlan で実行せずにステップだけを受け取る。
+    private bool _previewingCommands;
+    private List<JobStep>? _capturedCommandSteps;
+    private string _capturedCommandError = "";
+
     private string GetFFmpegPath()
     {
         var p = Environment.ExpandEnvironmentVariables(_ffmpegPath.Trim().Trim('"'));
@@ -118,6 +124,11 @@ internal sealed partial class MainForm
                 throw new InvalidOperationException("先に入力動画を読み込んでください。");
             }
             _ = GetFFmpegPath();
+            if (_previewingCommands)
+            {
+                _capturedCommandSteps = steps;
+                return;
+            }
             // 抽出・分割は、呼び出し側で全ファイルの上書き確認まで済ませてから渡される。
             var confirmedPath = alreadyConfirmed ? outputPath : ConfirmOutputPath(outputPath);
             if (confirmedPath == null)
@@ -1428,6 +1439,7 @@ internal sealed partial class MainForm
     /// </summary>
     private bool ConfirmOpusInMp4(bool audioReencoded)
     {
+        if (_previewingCommands) return true;
         if (_settings.SuppressOpusInMp4Warning) return true;
 
         using var dialog = new Form
@@ -1730,6 +1742,11 @@ internal sealed partial class MainForm
         }
         catch (Exception ex)
         {
+            if (_previewingCommands)
+            {
+                _capturedCommandError = ex.Message;
+                return;
+            }
             WriteLog($"カット以外の編集を開始できませんでした: {ex.Message}");
             MessageBox.Show(ex.Message, AppTitle, MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
@@ -1741,6 +1758,8 @@ internal sealed partial class MainForm
 
     private readonly Dictionary<(string Path, long StartMs, long EndMs), long> _losslessVideoLengthCache = new();
     private readonly Dictionary<(string Path, long StartMs, long EndMs), (long VideoStartMs, long VideoLengthMs, long ContentStartMs, long StartPacketIndex, long EndPacketIndex, long FrameDurationMs)?> _losslessVideoRangeCache = new();
+    private readonly Dictionary<string, long> _losslessBsfZeroCache = new();
+    private readonly object _losslessProbeLock = new();
 
     /// <summary>
     /// 無劣化カットの映像の長さを、終了位置以前の最後の I / P フレームに合わせた長さ (ms) で返す。
@@ -1753,7 +1772,7 @@ internal sealed partial class MainForm
         var lengthMs = endMs - startMs;
         if (_probe == null || _videoStreams.Count == 0 || _inputPath.Length == 0) return lengthMs;
         var key = (_inputPath, startMs, endMs);
-        if (_losslessVideoLengthCache.TryGetValue(key, out var cached)) return cached;
+        lock (_losslessProbeLock) { if (_losslessVideoLengthCache.TryGetValue(key, out var cached)) return cached; }
         var result = lengthMs;
         try
         {
@@ -1813,7 +1832,7 @@ internal sealed partial class MainForm
             }
         }
         catch { result = lengthMs; }
-        _losslessVideoLengthCache[key] = result;
+        lock (_losslessProbeLock) { _losslessVideoLengthCache[key] = result; }
         return result;
     }
 
@@ -1832,7 +1851,7 @@ internal sealed partial class MainForm
     {
         if (_probe == null || _videoStreams.Count == 0 || _inputPath.Length == 0) return null;
         var key = (_inputPath, startMs, endMs);
-        if (_losslessVideoRangeCache.TryGetValue(key, out var cached)) return cached;
+        lock (_losslessProbeLock) { if (_losslessVideoRangeCache.TryGetValue(key, out var cached)) return cached; }
         (long VideoStartMs, long VideoLengthMs, long ContentStartMs, long StartPacketIndex, long EndPacketIndex, long FrameDurationMs)? result = null;
         try
         {
@@ -1858,7 +1877,7 @@ internal sealed partial class MainForm
                     var minAppMs = ProbeMinVideoPacketMs(ffprobe, formatStartSec, videoFirstAbsSec);
                     if (minAppMs < 0)
                     {
-                        _losslessVideoRangeCache[key] = null;
+                        lock (_losslessProbeLock) { _losslessVideoRangeCache[key] = null; }
                         return null;
                     }
                     videoStartMs = minAppMs - bsfZeroAppMs - 2;
@@ -1871,10 +1890,10 @@ internal sealed partial class MainForm
                     result = ProbeLosslessPacketIndexRangeMs(ffprobe, startMs, endMs, formatStartSec, videoFirstAppMs);
                     if (!result.HasValue)
                     {
-                        _losslessVideoRangeCache[key] = null;
+                        lock (_losslessProbeLock) { _losslessVideoRangeCache[key] = null; }
                         return null;
                     }
-                    _losslessVideoRangeCache[key] = result;
+                    lock (_losslessProbeLock) { _losslessVideoRangeCache[key] = result; }
                     return result;
                 }
                 var firstExportedMs = ProbeFirstExportedVideoMs(ffprobe, videoStartMs, formatStartSec, bsfZeroAbsSec);
@@ -1916,7 +1935,7 @@ internal sealed partial class MainForm
             }
         }
         catch { result = null; }
-        _losslessVideoRangeCache[key] = result;
+        lock (_losslessProbeLock) { _losslessVideoRangeCache[key] = result; }
         return result;
     }
 
@@ -2147,8 +2166,12 @@ internal sealed partial class MainForm
     /// </summary>
     private long GetLosslessBsfZeroAppUs(string ffprobe, double formatStartSec, double videoFirstAbsSec)
     {
+        // 起点は入力ファイルだけで決まるため、区間ごとに調べ直さず使い回す。
+        lock (_losslessProbeLock) { if (_losslessBsfZeroCache.TryGetValue(_inputPath, out var cached)) return cached; }
         var firstKeyUs = ProbeFirstKeyframeVideoUs(ffprobe, formatStartSec);
-        return firstKeyUs >= 0 ? firstKeyUs : (long)Math.Round((videoFirstAbsSec - formatStartSec) * 1000000.0);
+        if (firstKeyUs < 0) return (long)Math.Round((videoFirstAbsSec - formatStartSec) * 1000000.0);
+        lock (_losslessProbeLock) { _losslessBsfZeroCache[_inputPath] = firstKeyUs; }
+        return firstKeyUs;
     }
 
     /// <summary>映像の先頭付近にあるパケットのうち、最も早い表示時刻 (アプリの時刻軸の ms)。無ければ -1。</summary>
@@ -3013,7 +3036,7 @@ internal sealed partial class MainForm
                 outputs.Add(path);
             }
             var existing = outputs.Where(File.Exists).ToList();
-            if (existing.Count > 0)
+            if (existing.Count > 0 && !_previewingCommands)
             {
                 var shown = string.Join("\r\n", existing.Take(8).Select(Path.GetFileName));
                 var rest = existing.Count > 8 ? $"\r\n…ほか {existing.Count - 8} ファイル" : "";
@@ -3092,6 +3115,11 @@ internal sealed partial class MainForm
         }
         catch (Exception ex)
         {
+            if (_previewingCommands)
+            {
+                _capturedCommandError = ex.Message;
+                return;
+            }
             WriteLog($"出力を開始できませんでした: {ex.Message}");
             MessageBox.Show(ex.Message, AppTitle, MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
