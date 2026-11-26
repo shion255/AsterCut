@@ -476,10 +476,10 @@ internal sealed partial class MainForm : Form
             }
         };
         _audioGroup.Controls.Add(audioListFrame);
-        var audioAllButton = Theme.MakeButton("すべて保持", 14, 285, 105, 30);
+        var audioAllButton = Theme.MakeButton("全て保持", 14, 285, 94, 30);
         audioAllButton.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
         audioAllButton.Click += (_, _) => { for (var i = 0; i < _audioList.Items.Count; i++) _audioList.SetItemChecked(i, true); };
-        var audioNoneButton = Theme.MakeButton("すべて削除", 127, 285, 105, 30);
+        var audioNoneButton = Theme.MakeButton("全て削除", 116, 285, 94, 30);
         audioNoneButton.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
         audioNoneButton.Click += (_, _) => { for (var i = 0; i < _audioList.Items.Count; i++) _audioList.SetItemChecked(i, false); };
         _audioGroup.Controls.Add(audioAllButton);
@@ -508,10 +508,10 @@ internal sealed partial class MainForm : Form
         keepDataListFrame.Controls.Add(_keepDataList);
         Theme.ApplyDarkScrollBars(_keepDataList);
         _keepDataGroup.Controls.Add(keepDataListFrame);
-        var keepDataAllButton = Theme.MakeButton("すべて保持", 14, 285, 105, 30);
+        var keepDataAllButton = Theme.MakeButton("全て保持", 14, 285, 94, 30);
         keepDataAllButton.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
         keepDataAllButton.Click += (_, _) => { for (var i = 0; i < _keepDataList.Items.Count; i++) _keepDataList.SetItemChecked(i, true); };
-        var keepDataNoneButton = Theme.MakeButton("すべて削除", 127, 285, 105, 30);
+        var keepDataNoneButton = Theme.MakeButton("全て削除", 116, 285, 94, 30);
         keepDataNoneButton.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
         keepDataNoneButton.Click += (_, _) => { for (var i = 0; i < _keepDataList.Items.Count; i++) _keepDataList.SetItemChecked(i, false); };
         _keepDataGroup.Controls.Add(keepDataAllButton);
