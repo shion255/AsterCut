@@ -174,7 +174,7 @@ internal sealed partial class MainForm
         _audioFormatCombo = MakeFormatCombo(148, 101, 110);
         foreach (var format in AudioFormatNames) _audioFormatCombo.Items.Add(format);
         _encodeSettingsGroup.Controls.Add(_audioFormatCombo);
-        _encodeSettingsGroup.Controls.Add(Theme.MakeLabel("音質 (bit rate):", 274, 101, 116, 28));
+        _encodeSettingsGroup.Controls.Add(Theme.MakeLabel("音質:", 274, 101, 116, 28));
         _audioBitrateCombo = MakeFormatCombo(357, 101, 105);
         _encodeSettingsGroup.Controls.Add(_audioBitrateCombo);
 
@@ -189,7 +189,7 @@ internal sealed partial class MainForm
         _encodeSettingsGroup.Controls.Add(_encodeRunButton);
 
         // ---- 出力先 (フォルダーのみ。ファイル名は自動) ----
-        _outputPathGroup = Theme.MakeGroupPanel(10, 12, 1015, 193, "出力先:");
+        _outputPathGroup = Theme.MakeGroupPanel(10, 12, 1015, 193, "出力先");
         _outputTab.Controls.Add(_outputPathGroup);
         _outputPathGroup.Controls.Add(Theme.MakeLabel("フォルダーパス:", 12, 31, 100, 26));
         _outputDirBox = Theme.MakeTextBox(98, 31, 540);

@@ -3131,7 +3131,7 @@ internal sealed partial class MainForm : Form
         if (crfShift != 0)
         {
             _videoCrfBox.Left += crfShift;
-            var audioLabelPre = FindLabelByText(outputTab, "音質 (bit rate):");
+            var audioLabelPre = FindLabelByText(outputTab, "音質:");
             if (audioLabelPre != null) audioLabelPre.Left += crfShift;
             if (_audioBitrateCombo != null) _audioBitrateCombo.Left += crfShift;
         }
@@ -3153,7 +3153,7 @@ internal sealed partial class MainForm : Form
             _rotationLabel.Width = Math.Max(rotationTextWidth, _rotationCombo.Left - _rotationLabel.Left - 2);
             _rotationLabel.Top = _rotationCombo.Top + (_rotationCombo.Height - _rotationLabel.Height) / 2;
         }
-        AlignLabelAndBox(FindLabelByText(outputTab, "音質 (bit rate):"), _audioBitrateCombo, gap, false);
+        AlignLabelAndBox(FindLabelByText(outputTab, "音質:"), _audioBitrateCombo, gap, false);
         AlignLabelAndBox(FindLabelByText(_outputDirBox.Parent, "フォルダーパス:"), _outputDirBox, gap, false);
     }
 
