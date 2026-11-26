@@ -304,6 +304,28 @@ internal sealed partial class MainForm
     /// </summary>
     protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
     {
+        // 仕様・使い方タブでは、Ctrl+F / F3 / Ctrl+G でキーワード検索を操作する。
+        // Ctrl+G は他のタブでは「指定したフレームへ移動」のショートカットなので、
+        // このタブを開いている間だけ検索へ割り当てる。
+        if (_tabs.SelectedTab == _specTab)
+        {
+            if (keyData == (Keys.Control | Keys.F))
+            {
+                _specSearchBox.Focus();
+                _specSearchBox.SelectAll();
+                return true;
+            }
+            if (keyData == Keys.F3 || keyData == (Keys.Control | Keys.G))
+            {
+                MoveSpecSearchMatch(1);
+                return true;
+            }
+            if (keyData == (Keys.Shift | Keys.F3) || keyData == (Keys.Control | Keys.Shift | Keys.G))
+            {
+                MoveSpecSearchMatch(-1);
+                return true;
+            }
+        }
         // タブ一覧がアクティブなとき (見出しをクリックした直後など) は、
         // ↑ を最初のタブ、↓ を最後のタブへの移動にする。
         // プレビュー操作中は ↑↓ が音量なので除く。

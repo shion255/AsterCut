@@ -1126,7 +1126,7 @@ internal sealed partial class MainForm : Form
         specSearchNextButton.BringToFront();
         var specSearchToolTip = new ToolTip();
         specSearchToolTip.SetToolTip(_specSectionCombo, "選択した項目の先頭へ移動します");
-        specSearchToolTip.SetToolTip(_specSearchBox, "キーワードを入力すると、仕様・使い方の中を検索します (Enter で次の一致、Shift+Enter で前の一致)");
+        specSearchToolTip.SetToolTip(_specSearchBox, "キーワードを入力すると、仕様・使い方の中を検索します。\r\nEnter / F3 で次の一致、Shift+Enter / Shift+F3 で前の一致へ移動します");
         specSearchToolTip.SetToolTip(specSearchPrevButton, "前の一致へ");
         specSearchToolTip.SetToolTip(specSearchNextButton, "次の一致へ");
         _specSearchBox.HandleCreated += (_, _) => ApplyTextBoxMarginsOnce(_specSearchBox, 2, 0);
@@ -1472,8 +1472,9 @@ internal sealed partial class MainForm : Form
         _specTextBox.Select(target, 0);
     }
 
-    private static readonly Color SpecSearchMatchBack = Color.FromArgb(96, 82, 8);
-    private static readonly Color SpecSearchCurrentBack = Color.FromArgb(194, 108, 0);
+    private static readonly Color SpecSearchMatchBack = Color.FromArgb(86, 74, 110);
+    private static readonly Color SpecSearchCurrentBack = Color.FromArgb(150, 128, 205);
+    private static readonly Color SpecSearchCurrentFore = Color.FromArgb(29, 28, 36);
 
     private static bool IsSpecJapaneseChar(char c)
     {
@@ -1572,9 +1573,17 @@ internal sealed partial class MainForm : Form
         if (enable) _specTextBox.Invalidate();
     }
 
-    /// <summary>キーワードが変わるたびに、一致箇所をすべてハイライトし直して最初の一致へ移動する。</summary>
+    /// <summary>
+    /// キーワードが変わるたびに、一致箇所をすべてハイライトし直す。
+    /// 現在の一致は、今いる位置 (本文の選択開始位置) を
+    /// 起点に探し直して決める。文字を打つたびに最初の一致へ戻ることはしない。
+    /// </summary>
     private void RefreshSpecSearch()
     {
+        var anchor = _specTextBox.SelectionStart;
+        // ハイライトの塗り直しで選択を動かすと表示位置が引っ張られるため、
+        // 塗り直す前の表示位置を覚えておき、終わったら戻してから必要な分だけスクロールする。
+        var savedScroll = GetSpecTextScrollPos();
         _specSearchMatches.Clear();
         _specSearchCurrent = -1;
         SetSpecTextRedraw(false);
@@ -1605,7 +1614,8 @@ internal sealed partial class MainForm : Form
                 }
                 if (_specSearchMatches.Count > 0)
                 {
-                    _specSearchCurrent = 0;
+                    var anchored = _specSearchMatches.FindIndex(m => m >= anchor);
+                    _specSearchCurrent = anchored >= 0 ? anchored : 0;
                     ApplySpecSearchCurrent();
                 }
             }
@@ -1614,8 +1624,9 @@ internal sealed partial class MainForm : Form
         {
             SetSpecTextRedraw(true);
         }
+        SetSpecTextScrollPos(savedScroll.X, savedScroll.Y);
         UpdateSpecSearchCountLabel();
-        if (_specSearchCurrent >= 0) _specTextBox.ScrollToCaret();
+        if (_specSearchCurrent >= 0) EnsureSpecSearchCurrentVisible();
     }
 
     private void ApplySpecSearchCurrent()
@@ -1624,12 +1635,14 @@ internal sealed partial class MainForm : Form
         var start = _specSearchMatches[_specSearchCurrent];
         _specTextBox.Select(start, _specSearchBox.Text.Length);
         _specTextBox.SelectionBackColor = SpecSearchCurrentBack;
+        _specTextBox.SelectionColor = SpecSearchCurrentFore;
         _specTextBox.Select(start, _specSearchBox.Text.Length);
     }
 
     private void MoveSpecSearchMatch(int direction)
     {
         if (_specSearchMatches.Count == 0) return;
+        var savedScroll = GetSpecTextScrollPos();
         var previous = _specSearchCurrent;
         _specSearchCurrent = (_specSearchCurrent + direction + _specSearchMatches.Count) % _specSearchMatches.Count;
         SetSpecTextRedraw(false);
@@ -1639,6 +1652,7 @@ internal sealed partial class MainForm : Form
             {
                 _specTextBox.Select(_specSearchMatches[previous], _specSearchBox.Text.Length);
                 _specTextBox.SelectionBackColor = SpecSearchMatchBack;
+                _specTextBox.SelectionColor = _specTextBox.ForeColor;
             }
             ApplySpecSearchCurrent();
         }
@@ -1646,8 +1660,72 @@ internal sealed partial class MainForm : Form
         {
             SetSpecTextRedraw(true);
         }
-        _specTextBox.ScrollToCaret();
+        SetSpecTextScrollPos(savedScroll.X, savedScroll.Y);
+        EnsureSpecSearchCurrentVisible();
         UpdateSpecSearchCountLabel();
+    }
+
+    /// <summary>
+    /// 現在の一致が表示範囲内に完全に見えているときはスクロールせず、
+    /// 見えていないときは、一致が画面の中央へ来るようスクロールする。
+    /// </summary>
+    private void EnsureSpecSearchCurrentVisible()
+    {
+        if (_specSearchCurrent < 0 || _specSearchCurrent >= _specSearchMatches.Count) return;
+        var start = _specSearchMatches[_specSearchCurrent];
+        var pos = _specTextBox.GetPositionFromCharIndex(start);
+        var endX = _specTextBox.GetPositionFromCharIndex(start + _specSearchBox.Text.Length).X;
+        var matchLine = _specTextBox.GetLineFromCharIndex(start);
+        var nextLineStart = _specTextBox.GetFirstCharIndexFromLine(matchLine + 1);
+        var lineHeight = nextLineStart >= 0
+            ? _specTextBox.GetPositionFromCharIndex(nextLineStart).Y - pos.Y
+            : _specTextBox.Font.Height;
+        if (lineHeight <= 0) lineHeight = _specTextBox.Font.Height;
+        var scroll = GetSpecTextScrollPos();
+        var newX = scroll.X;
+        var newY = scroll.Y;
+        if (pos.Y < 0 || pos.Y + lineHeight > _specTextBox.ClientSize.Height)
+        {
+            newY = scroll.Y + pos.Y - (_specTextBox.ClientSize.Height - lineHeight) / 2;
+            if (newY < 0) newY = 0;
+        }
+        if (pos.X < 0 || endX > _specTextBox.ClientSize.Width)
+        {
+            newX = scroll.X + pos.X - (_specTextBox.ClientSize.Width - (endX - pos.X)) / 2;
+            if (newX < 0) newX = 0;
+        }
+        if (newX != scroll.X || newY != scroll.Y) SetSpecTextScrollPos(newX, newY);
+    }
+
+    private Point GetSpecTextScrollPos()
+    {
+        var ptr = Marshal.AllocHGlobal(8);
+        try
+        {
+            Marshal.WriteInt32(ptr, 0, 0);
+            Marshal.WriteInt32(ptr, 4, 0);
+            SendMessage(_specTextBox.Handle, 0x04DD, IntPtr.Zero, ptr); // EM_GETSCROLLPOS
+            return new Point(Marshal.ReadInt32(ptr, 0), Marshal.ReadInt32(ptr, 4));
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(ptr);
+        }
+    }
+
+    private void SetSpecTextScrollPos(int x, int y)
+    {
+        var ptr = Marshal.AllocHGlobal(8);
+        try
+        {
+            Marshal.WriteInt32(ptr, 0, x);
+            Marshal.WriteInt32(ptr, 4, y);
+            SendMessage(_specTextBox.Handle, 0x04DE, IntPtr.Zero, ptr); // EM_SETSCROLLPOS
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(ptr);
+        }
     }
 
     private void UpdateSpecSearchCountLabel()
