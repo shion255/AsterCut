@@ -624,9 +624,10 @@ internal sealed partial class MainForm
     }
 
     /// <summary>現在の設定で実行される出力の全ステップを、実行せずに組み立ててコマンドライン文字列にする。</summary>
-    private (List<(string Description, string Command)> Items, string Error) CaptureCommandLines(bool forceEncode)
+    private (List<(string Description, string Command)> Items, string Error) CaptureCommandLines(bool forceEncode, bool writeAsterCut)
     {
         _previewingCommands = true;
+        _previewAsterCut = writeAsterCut;
         _capturedCommandSteps = null;
         _capturedCommandError = "";
         try
@@ -656,14 +657,14 @@ internal sealed partial class MainForm
             return;
         }
         (List<(string Description, string Command)> Items, string Error)? encode = null;
+        (List<(string Description, string Command)> Items, string Error)? lossless = null;
         var previousStatus = _statusLabel.Text;
         _statusLabel.Text = "コマンドラインを作成しています...";
         Cursor.Current = Cursors.WaitCursor;
         Update();
-        (List<(string Description, string Command)> Items, string Error) lossless;
         try
         {
-            lossless = CaptureCommandLines(false);
+            lossless = CaptureCommandLines(false, false);
         }
         finally
         {
@@ -676,6 +677,7 @@ internal sealed partial class MainForm
             Icon = AppIcon.Value,
             Text = "コマンドライン",
             Size = new Size(940, 550),
+            MinimumSize = new Size(830, 300),
             FormBorderStyle = FormBorderStyle.Sizable,
             MaximizeBox = false,
             MinimizeBox = false,
@@ -684,7 +686,8 @@ internal sealed partial class MainForm
             AutoScaleMode = AutoScaleMode.None,
             StartPosition = FormStartPosition.CenterParent,
         };
-        var topPanel = new Panel { Dock = DockStyle.Top, Height = 44, BackColor = Theme.PageBack };
+        // パネルの幅を先に与えておく (右寄せのアンカーの基準にするため)。
+        var topPanel = new Panel { Dock = DockStyle.Top, Height = 44, Width = 924, BackColor = Theme.PageBack };
         var losslessRadio = new RadioButton
         {
             Text = "無劣化",
@@ -715,6 +718,18 @@ internal sealed partial class MainForm
         };
         jumpCombo.DrawItem += DrawSpecSectionComboItem;
         topPanel.Controls.Add(jumpCombo);
+        // 独自タグのチェックは常にオフで開き、状態は記憶しない。
+        var asterCutCheck = new CheckBox
+        {
+            Text = "_ASTER_CUT",
+            Location = new Point(792, 11),
+            Size = new Size(124, 24),
+            ForeColor = Theme.LabelFore,
+            BackColor = Color.Transparent,
+            Checked = false,
+            Anchor = AnchorStyles.Top | AnchorStyles.Right,
+        };
+        topPanel.Controls.Add(asterCutCheck);
         var box = new TextBox
         {
             Multiline = true,
@@ -728,7 +743,7 @@ internal sealed partial class MainForm
             Dock = DockStyle.Fill,
         };
         Theme.ApplyDarkScrollBars(box);
-        var bottomPanel = new Panel { Dock = DockStyle.Bottom, Height = 48, BackColor = Theme.PageBack };
+        var bottomPanel = new Panel { Dock = DockStyle.Bottom, Height = 48, Width = 924, BackColor = Theme.PageBack };
         var copyButton = Theme.MakeButton("コピー", 690, 8, 100, 32);
         copyButton.Anchor = AnchorStyles.Top | AnchorStyles.Right;
         var closeButton = Theme.MakeButton("閉じる", 800, 8, 100, 32);
@@ -749,15 +764,19 @@ internal sealed partial class MainForm
         void RefreshText()
         {
             if (popup.IsDisposed) return;
-            if (!losslessRadio.Checked && encode == null)
+            if (losslessRadio.Checked ? lossless == null : encode == null)
             {
                 box.Text = "作成中...";
                 box.Update();
                 Cursor.Current = Cursors.WaitCursor;
-                try { encode = CaptureCommandLines(true); }
+                try
+                {
+                    if (losslessRadio.Checked) lossless = CaptureCommandLines(false, asterCutCheck.Checked);
+                    else encode = CaptureCommandLines(true, asterCutCheck.Checked);
+                }
                 finally { Cursor.Current = Cursors.Default; }
             }
-            var (items, error) = losslessRadio.Checked ? lossless : encode!.Value;
+            var (items, error) = losslessRadio.Checked ? lossless!.Value : encode!.Value;
             jumpIndices.Clear();
             jumpCombo.Items.Clear();
             jumpCombo.Items.Add("各出力を選択");
@@ -798,6 +817,14 @@ internal sealed partial class MainForm
         };
         losslessRadio.CheckedChanged += (_, _) => { if (losslessRadio.Checked) RefreshText(); };
         encodeRadio.CheckedChanged += (_, _) => { if (encodeRadio.Checked) RefreshText(); };
+        asterCutCheck.CheckedChanged += (_, _) =>
+        {
+            // 両モードとも作り直しが必要になる。表示中のモードは RefreshText がその場で作り直し、
+            // もう一方は切り替え時に作り直す。
+            lossless = null;
+            encode = null;
+            RefreshText();
+        };
         RefreshText();
         Theme.ApplyDarkTitleBar(popup);
         popup.ShowDialog(this);

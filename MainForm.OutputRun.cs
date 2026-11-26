@@ -63,6 +63,7 @@ internal sealed partial class MainForm
     // コマンドライン表示のためにプランを組み立てるときの取り込み先。
     // この間は、確認ダイアログを出さず、ログも書かず、StartPlan で実行せずにステップだけを受け取る。
     private bool _previewingCommands;
+    private bool _previewAsterCut;
     private List<JobStep>? _capturedCommandSteps;
     private string _capturedCommandError = "";
 
@@ -1345,7 +1346,9 @@ internal sealed partial class MainForm
     private List<string> AddEditorMetadataArgument(List<string> arguments, string outputPath, IReadOnlyList<string> metadataLines)
     {
         // 独自タグの書き込みは専用チェックボックスで制御する。「メタデータを残す」とは独立。
-        if (_writeEditorMetadataCheckBox != null && !_writeEditorMetadataCheckBox.Checked) return arguments;
+        // コマンドライン表示のプレビュー中は、ポップアップ側のチェックで切り替える。
+        var writeMetadata = _previewingCommands ? _previewAsterCut : (_writeEditorMetadataCheckBox != null && _writeEditorMetadataCheckBox.Checked);
+        if (!writeMetadata) return arguments;
 
         // 独自タグは Matroska (MKV) と MP4 / MOV / M4V 出力にのみ追加する。
         var outputExt = Path.GetExtension(outputPath).ToLowerInvariant();
