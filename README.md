@@ -1,6 +1,6 @@
 # <img src="icon.png" width="40" alt=""> AsterCut
 
-<img width="1104" height="892" alt="astercut" src="https://github.com/user-attachments/assets/a1c2fadb-b958-4649-94a4-5c358a67b260" />
+<img width="1247" height="952" alt="astercut" src="https://github.com/user-attachments/assets/c28a85b2-79ba-4666-89b1-78e18455cc1d" />
 
 FFmpeg の **trim ビットストリームフィルター**を使って、動画を無劣化で切り出す、Windows 向けの動画編集ツールです。
 mpv のプレビューで映像を確認しながら区間を指定し、単一区間の切り出しと分割はストリームコピーのまま、複数区間の結合は再エンコードで行います。
