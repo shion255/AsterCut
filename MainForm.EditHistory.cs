@@ -377,7 +377,7 @@ internal sealed partial class MainForm
             Icon = AppIcon.Value,
             Text = "編集履歴の復元",
             StartPosition = FormStartPosition.CenterParent,
-            MinimumSize = new Size(720, 360),
+            MinimumSize = new Size(842, 360),
             Size = new Size(900, 460),
             BackColor = Theme.PageBack,
             ForeColor = Theme.MenuFore,
@@ -432,14 +432,17 @@ internal sealed partial class MainForm
         if (listView.Items.Count > 0) listView.Items[0].Selected = true;
         dialogForm.Controls.Add(listView);
 
-        var restoreButton = Theme.MakeButton("復元", 12, 374, 120, 32);
+        var restoreButton = Theme.MakeButton("復元", 12, 374, 80, 32);
         restoreButton.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
         dialogForm.Controls.Add(restoreButton);
         dialogForm.AcceptButton = restoreButton;
-        var deleteButton = Theme.MakeButton("選択した履歴を削除", 140, 374, 170, 32);
+        var deleteButton = Theme.MakeButton("選択した履歴を削除", 100, 374, 150, 32);
         deleteButton.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
         dialogForm.Controls.Add(deleteButton);
-        var selectionCountLabel = Theme.MakeLabel("", 318, 377, 200, 26);
+        var deleteAllButton = Theme.MakeButton("全て削除", 258, 374, 96, 32);
+        deleteAllButton.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
+        dialogForm.Controls.Add(deleteAllButton);
+        var selectionCountLabel = Theme.MakeLabel("", 362, 377, 108, 26);
         selectionCountLabel.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
         dialogForm.Controls.Add(selectionCountLabel);
         var closeButton = Theme.MakeButton("閉じる", 752, 374, 120, 32);
@@ -504,11 +507,31 @@ internal sealed partial class MainForm
             UpdateSelectionState();
         }
         deleteButton.Click += (_, _) => DeleteSelected();
+        void DeleteAll()
+        {
+            if (listView.Items.Count == 0) return;
+            var count = listView.Items.Count;
+            foreach (ListViewItem item in listView.Items)
+            {
+                RemoveEditHistoryEntry((EditHistoryEntry)item.Tag!);
+            }
+            listView.Items.Clear();
+            WriteLog($"編集履歴を {count} 件削除しました。");
+            UpdateSelectionState();
+        }
+        deleteAllButton.Click += (_, _) => DeleteAll();
         listView.KeyDown += (_, e) =>
         {
-            if (e.KeyCode != Keys.Delete) return;
-            e.Handled = true;
-            DeleteSelected();
+            if (e.KeyCode == Keys.Delete)
+            {
+                e.Handled = true;
+                DeleteSelected();
+            }
+            else if (e.Control && e.KeyCode == Keys.A)
+            {
+                e.Handled = true;
+                foreach (ListViewItem item in listView.Items) item.Selected = true;
+            }
         };
         UpdateSelectionState();
         closeButton.Click += (_, _) => dialogForm.Close();
